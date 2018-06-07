@@ -21,5 +21,9 @@ executable wormhole
   -- other-extensions:    
   build-depends:       base >=4.11 && <4.12
                      , magic-wormhole
+                     , protolude
+                     , optparse-applicative
+                     , text
   hs-source-dirs:      cmd
   default-language:    Haskell2010
+  default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
