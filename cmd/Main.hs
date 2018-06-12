@@ -1,11 +1,16 @@
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import Protolude
 
 import qualified Options.Applicative as Opt
 import qualified Data.Text as Text
+import qualified Data.Text.IO as TIO
 
 import qualified MagicWormhole
+
+import Paths_wormhole
 
 data Options
   = Options
@@ -42,7 +47,19 @@ commandParser = Opt.hsubparser
 opts :: Opt.ParserInfo Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
 
+-- | genWordlist would produce a list of the form
+--   [ ["aardwark", "adroitness"],
+--     ["absurd", "adviser"],
+--     ....
+--     ["Zulu", "Yucatan"] ]
+genWordList :: FilePath -> IO [[Text]]
+genWordList wordlistFile = do
+  file <- TIO.readFile wordlistFile
+  let contents = map Text.words $ Text.lines file
+  return contents
+
 main :: IO ()
 main = do
   options <- Opt.execParser opts
+  wordList <- genWordList <$> getDataFileName "wordlist.txt"
   return ()
