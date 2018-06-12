@@ -1,5 +1,5 @@
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 module Main where
 
 import Protolude
@@ -40,18 +40,23 @@ optionsParser
     defaultEndpoint = fromMaybe (panic "Invalid default URL") (MagicWormhole.parseWebSocketEndpoint "ws://relay.magic-wormhole.io:4000/v1")
 
 commandParser :: Opt.Parser Command
-commandParser = Opt.hsubparser
-  ( Opt.command "send" (Opt.info (pure Send) (Opt.progDesc "send a text message")) <>
-    Opt.command "receive" (Opt.info (pure Receive) (Opt.progDesc "receive a text message")) )
+commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
+  where
+    sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message"))
+    receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
+    receiveOptions :: Opt.Parser Command
+    receiveOptions = pure Receive
+    sendOptions :: Opt.Parser Command
+    sendOptions = pure Send
 
 opts :: Opt.ParserInfo Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
 
 -- | genWordlist would produce a list of the form
---   [ ["aardwark", "adroitness"],
---     ["absurd", "adviser"],
+--   [ ["01", "aardwark", "adroitness"],
+--     ["02", "absurd", "adviser"],
 --     ....
---     ["Zulu", "Yucatan"] ]
+--     ["ff", "Zulu", "Yucatan"] ]
 genWordList :: FilePath -> IO [[Text]]
 genWordList wordlistFile = do
   file <- TIO.readFile wordlistFile
@@ -61,5 +66,12 @@ genWordList wordlistFile = do
 main :: IO ()
 main = do
   options <- Opt.execParser opts
-  wordList <- genWordList <$> getDataFileName "wordlist.txt"
+  wordList <- genWordList =<< getDataFileName "wordlist.txt"
+  -- TIO.putStrLn $ show wordList
+  side <- MagicWormhole.generateSide
+  let endpoint = relayEndpoint options
+  -- case cmd options of
+  --   Send -> MagicWormhole.runClient endpoint appID side $ \session ->
+  --     -- text, file or directory?
+      
   return ()
