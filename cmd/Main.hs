@@ -6,9 +6,12 @@ import Protolude
 
 import qualified Crypto.Spake2 as Spake2
 import qualified Data.Aeson as Aeson
+import Data.String (String)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 import qualified Options.Applicative as Opt
+import qualified System.Console.Haskeline as H
+import qualified System.Console.Haskeline.Completion as HC
 import qualified System.Posix.Files as Unix
 import System.Random (randomR, getStdGen)
 
@@ -119,6 +122,14 @@ sendText session password message = do
     (\conn -> do
         let offer = MagicWormhole.Message message
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer))))
+
+completeWord :: Monad m => [Text] -> HC.CompletionFunc m
+completeWord wordlist = HC.completeWord Nothing [] completionFunc
+  where
+    completionFunc :: Monad m => String -> m [HC.Completion]
+    completionFunc word = do
+      let completions = filter (\w -> Text.isPrefixOf w (toS word)) wordlist
+      return $ map HC.simpleCompletion (map toS completions)
 
 main :: IO ()
 main = do
