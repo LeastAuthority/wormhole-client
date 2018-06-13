@@ -1,7 +1,7 @@
 * Things to be done
-** Create a basic client like hocus-pocus in the library repository.
-** make it work for text messages via custom input codes.
-** PGP word list support.
-** command completion for code input.
+** Create a basic client like hocus-pocus in the library repository. (DONE)
+** make it work for text messages via custom input codes. (DONE)
+** PGP word list support. (DONE)
+** command completion for code input. (DONE)
 ** support for transit protocol for files.
 ** support for directory transfers via transit protocol.
