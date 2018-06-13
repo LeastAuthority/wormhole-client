@@ -100,6 +100,13 @@ allocatePassword wordlist = do
 -- to look up exact type of password in the magic-wormhole docs.
 type Password = ByteString
 
+printSendHelpText :: Text -> IO ()
+printSendHelpText passcode = do
+  TIO.putStrLn $  "Wormhole code is: " <> passcode
+  TIO.putStrLn "On the other computer, please run:"
+  TIO.putStrLn ""
+  TIO.putStrLn $ "wormhole receive " <> passcode
+
 -- | Send a text message to a Magic Wormhole peer.
 sendText :: MagicWormhole.Session -> Password -> Text -> IO ()
 sendText session password message = do
@@ -107,11 +114,13 @@ sendText session password message = do
   mailbox <- MagicWormhole.claim session nameplate
   peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
   let (MagicWormhole.Nameplate n) = nameplate
-  TIO.putStrLn $ "at the receiving side, please type: " <> toS n <> "-" <> toS password
+  printSendHelpText $ toS n <> "-" <> toS password
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         let offer = MagicWormhole.Message message
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer))))
+
+
 
 main :: IO ()
 main = do
