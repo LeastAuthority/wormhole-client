@@ -23,14 +23,13 @@ data Options
   } deriving (Eq, Show)
 
 data Command
-  = Send Text
+  = Send TransferType
   | Receive
   deriving (Eq, Show)
 
 data TransferType
-  = Message Text
-  | File FilePath
-  | Directory FilePath
+  = TMsg Text
+  | TFileOrDir FilePath
   deriving (Show, Eq)
 
 optionsParser :: Opt.Parser Options
@@ -57,7 +56,13 @@ commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
     receiveOptions :: Opt.Parser Command
     receiveOptions = pure Receive
     sendOptions :: Opt.Parser Command
-    sendOptions = Send <$> Opt.strArgument (Opt.metavar "TEXT-OR-FILE-OR-DIR" <> Opt.help "text message or a file or directory path")
+    sendOptions = Send <$> parseTransferType
+    parseTransferType :: Opt.Parser TransferType
+    parseTransferType = msgParser <|> fileOrDirParser
+    msgParser :: Opt.Parser TransferType
+    msgParser = TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
+    fileOrDirParser :: Opt.Parser TransferType
+    fileOrDirParser = TFileOrDir <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
 
 opts :: Opt.ParserInfo Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
@@ -116,17 +121,13 @@ main = do
   let endpoint = relayEndpoint options
   case cmd options of
     Send tfd -> MagicWormhole.runClient endpoint appID side $ \session ->
-      -- text, file or directory?
-      -- status <- Unix.getFileStatus (toS tfd)
-      let isDir = False -- Unix.isDirectory status
-          isFile = False -- Unix.isRegularFile status
-        in
-        if not isDir && not isFile
-        then do
+      case tfd of
+        TMsg msg -> do
           -- text message
+          let (TMsg msg) = tfd
           password <- allocatePassword wordList
-          sendText session (toS password) tfd
-        else
+          sendText session (toS password) msg
+        TFileOrDir filename -> do
           TIO.putStrLn "file or directory transfers not supported yet"
     _ -> TIO.putStrLn "unsupported command"
   return ()
