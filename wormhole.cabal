@@ -22,6 +22,7 @@ executable wormhole
   -- other-extensions:    
   build-depends:       base >=4.11 && <4.12
                      , aeson
+                     , haskeline
                      , magic-wormhole
                      , protolude
                      , optparse-applicative

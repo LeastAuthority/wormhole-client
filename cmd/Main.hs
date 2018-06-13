@@ -88,13 +88,21 @@ genWordList wordlistFile = do
             Just sndWord = atMay ws 2
         in (firstWord, sndWord)
 
+genPasscodes :: [Text] -> [(Text, Text)] -> [Text]
+genPasscodes nameplates wordpairs =
+  let evens = map fst wordpairs
+      odds = map snd wordpairs
+      wordCombos = [ o <> "-" <> e | o <- odds, e <- evens ]
+  in
+    [ n <> "-" <> hiphenWord | n <- nameplates, hiphenWord <- wordCombos ]
+
 allocatePassword :: [(Text, Text)] -> IO Text
 allocatePassword wordlist = do
   g <- getStdGen
   let (r1, g') = randomR (0, 255) g
       (r2, _) = randomR (0, 255) g'
-      Just odd = atMay wordlist r1 >>= Just . fst
-      Just even = atMay wordlist r2 >>= Just . snd
+      Just odd = atMay wordlist r1 >>= Just . snd
+      Just even = atMay wordlist r2 >>= Just . fst
   return $ Text.concat [odd, "-", even]
 
 -- | A password used to exchange with a Magic Wormhole peer.
@@ -123,13 +131,44 @@ sendText session password message = do
         let offer = MagicWormhole.Message message
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer))))
 
-completeWord :: Monad m => [Text] -> HC.CompletionFunc m
-completeWord wordlist = HC.completeWord Nothing [] completionFunc
+completeWord :: MonadIO m => [Text] -> HC.CompletionFunc m
+completeWord wordlist = HC.completeWord Nothing "" completionFunc
   where
     completionFunc :: Monad m => String -> m [HC.Completion]
     completionFunc word = do
-      let completions = filter (\w -> Text.isPrefixOf w (toS word)) wordlist
+      let completions = filter ((toS word) `Text.isPrefixOf`) wordlist
       return $ map HC.simpleCompletion (map toS completions)
+
+-- | Receive a text message from a Magic Wormhole peer.
+receiveText :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
+receiveText session wordlist = do
+  nameplates <- MagicWormhole.list session
+  let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
+  putText "Enter the receive wormhole code: "
+  code <- H.runInputT (settings (genPasscodes ns wordlist)) getInput
+  let codeSplit = Text.split (=='-') code
+  let (Just nameplate) = headMay codeSplit
+  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
+  peer <- MagicWormhole.open session mailbox
+  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
+    (\conn -> do
+        MagicWormhole.PlainText received <- atomically $ MagicWormhole.receiveMessage conn
+        case Aeson.eitherDecode (toS received) of
+          Left err -> panic $ "Could not decode message: " <> show err
+          Right (MagicWormhole.Message message) -> pure message)
+    where
+      settings :: MonadIO m => [Text] -> H.Settings m
+      settings possibleWords = H.Settings
+        { H.complete = completeWord possibleWords
+        , H.historyFile = Nothing
+        , H.autoAddHistory = False
+        }
+      getInput :: H.InputT IO Text
+      getInput = do
+        minput <- H.getInputLine ""
+        case minput of
+          Nothing -> return ""
+          Just input -> return (toS input)
 
 main :: IO ()
 main = do
@@ -147,6 +186,8 @@ main = do
           sendText session (toS password) msg
         TFileOrDir filename -> do
           TIO.putStrLn "file or directory transfers not supported yet"
-    _ -> TIO.putStrLn "unsupported command"
+    Receive -> MagicWormhole.runClient endpoint appID side $ \session -> do
+      message <- receiveText session wordList
+      putStr message
   return ()
     where appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
