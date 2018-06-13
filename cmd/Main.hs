@@ -27,7 +27,7 @@ data Options
 
 data Command
   = Send TransferType
-  | Receive
+  | Receive (Maybe Text)
   deriving (Eq, Show)
 
 data TransferType
@@ -57,7 +57,7 @@ commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
     sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message, a file or a directory"))
     receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
     receiveOptions :: Opt.Parser Command
-    receiveOptions = pure Receive
+    receiveOptions = Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
     sendOptions :: Opt.Parser Command
     sendOptions = Send <$> parseTransferType
     parseTransferType :: Opt.Parser TransferType
@@ -140,12 +140,8 @@ completeWord wordlist = HC.completeWord Nothing "" completionFunc
       return $ map HC.simpleCompletion (map toS completions)
 
 -- | Receive a text message from a Magic Wormhole peer.
-receiveText :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
-receiveText session wordlist = do
-  nameplates <- MagicWormhole.list session
-  let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
-  putText "Enter the receive wormhole code: "
-  code <- H.runInputT (settings (genPasscodes ns wordlist)) getInput
+receiveText :: MagicWormhole.Session -> Text -> IO Text
+receiveText session code = do
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
   mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
@@ -156,19 +152,6 @@ receiveText session wordlist = do
         case Aeson.eitherDecode (toS received) of
           Left err -> panic $ "Could not decode message: " <> show err
           Right (MagicWormhole.Message message) -> pure message)
-    where
-      settings :: MonadIO m => [Text] -> H.Settings m
-      settings possibleWords = H.Settings
-        { H.complete = completeWord possibleWords
-        , H.historyFile = Nothing
-        , H.autoAddHistory = False
-        }
-      getInput :: H.InputT IO Text
-      getInput = do
-        minput <- H.getInputLine ""
-        case minput of
-          Nothing -> return ""
-          Just input -> return (toS input)
 
 main :: IO ()
 main = do
@@ -186,8 +169,30 @@ main = do
           sendText session (toS password) msg
         TFileOrDir filename -> do
           TIO.putStrLn "file or directory transfers not supported yet"
-    Receive -> MagicWormhole.runClient endpoint appID side $ \session -> do
-      message <- receiveText session wordList
-      putStr message
+    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
+      case maybeCode of
+        Nothing -> do -- generate code
+          nameplates <- MagicWormhole.list session
+          let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
+          putText "Enter the receive wormhole code: "
+          code <- H.runInputT (settings (genPasscodes ns wordList)) getInput
+          message <- receiveText session code
+          putStr message
+        Just code -> do
+          message <- receiveText session code
+          putStr message
   return ()
-    where appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
+    where
+      appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
+      settings :: MonadIO m => [Text] -> H.Settings m
+      settings possibleWords = H.Settings
+        { H.complete = completeWord possibleWords
+        , H.historyFile = Nothing
+        , H.autoAddHistory = False
+        }
+      getInput :: H.InputT IO Text
+      getInput = do
+        minput <- H.getInputLine ""
+        case minput of
+          Nothing -> return ""
+          Just input -> return (toS input)
