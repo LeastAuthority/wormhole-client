@@ -68,10 +68,10 @@ opts :: Opt.ParserInfo Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
 
 -- | genWordlist would produce a list of the form
---   [ ["01", "aardwark", "adroitness"],
---     ["02", "absurd", "adviser"],
+--   [ ("aardwark", "adroitness"),
+--     ("absurd", "adviser"),
 --     ....
---     ["ff", "Zulu", "Yucatan"] ]
+--     ("zulu", "yucatan") ]
 genWordList :: FilePath -> IO [(Text, Text)]
 genWordList wordlistFile = do
   file <- TIO.readFile wordlistFile
@@ -119,8 +119,6 @@ sendText session password message = do
     (\conn -> do
         let offer = MagicWormhole.Message message
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer))))
-
-
 
 main :: IO ()
 main = do
