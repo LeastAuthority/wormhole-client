@@ -21,10 +21,14 @@ executable wormhole
   other-modules:       Paths_wormhole
   -- other-extensions:    
   build-depends:       base >=4.11 && <4.12
+                     , aeson
                      , magic-wormhole
                      , protolude
                      , optparse-applicative
+                     , random
+                     , spake2 >= 0.4
                      , text
+                     , unix
   hs-source-dirs:      cmd
   default-language:    Haskell2010
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
