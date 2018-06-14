@@ -32,7 +32,7 @@ import System.Random (randomR, getStdGen)
 
 import qualified MagicWormhole
 
-import Paths_wormhole
+import Paths_hwormhole
 
 data Options
   = Options
