@@ -12,7 +12,6 @@ import qualified Data.Text.IO as TIO
 import qualified Options.Applicative as Opt
 import qualified System.Console.Haskeline as H
 import qualified System.Console.Haskeline.Completion as HC
-import qualified System.Posix.Files as Unix
 import System.Random (randomR, getStdGen)
 
 import qualified MagicWormhole
@@ -101,9 +100,9 @@ allocatePassword wordlist = do
   g <- getStdGen
   let (r1, g') = randomR (0, 255) g
       (r2, _) = randomR (0, 255) g'
-      Just odd = atMay wordlist r1 >>= Just . snd
-      Just even = atMay wordlist r2 >>= Just . fst
-  return $ Text.concat [odd, "-", even]
+      Just evenW = atMay wordlist r2 >>= Just . fst
+      Just oddW = atMay wordlist r1 >>= Just . snd
+  return $ Text.concat [oddW, "-", evenW]
 
 -- | A password used to exchange with a Magic Wormhole peer.
 --
@@ -136,8 +135,8 @@ completeWord wordlist = HC.completeWord Nothing "" completionFunc
   where
     completionFunc :: Monad m => String -> m [HC.Completion]
     completionFunc word = do
-      let completions = filter ((toS word) `Text.isPrefixOf`) wordlist
-      return $ map HC.simpleCompletion (map toS completions)
+      let completions = filter (toS word `Text.isPrefixOf`) wordlist
+      return $ map (HC.simpleCompletion . toS) completions
 
 -- | Receive a text message from a Magic Wormhole peer.
 receiveText :: MagicWormhole.Session -> Text -> IO Text
@@ -164,12 +163,11 @@ main = do
       case tfd of
         TMsg msg -> do
           -- text message
-          let (TMsg msg) = tfd
           password <- allocatePassword wordList
           sendText session (toS password) msg
-        TFileOrDir filename -> do
+        TFileOrDir filename ->
           TIO.putStrLn "file or directory transfers not supported yet"
-    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
+    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
       case maybeCode of
         Nothing -> do -- generate code
           nameplates <- MagicWormhole.list session
