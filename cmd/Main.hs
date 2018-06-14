@@ -100,8 +100,8 @@ allocatePassword wordlist = do
   g <- getStdGen
   let (r1, g') = randomR (0, 255) g
       (r2, _) = randomR (0, 255) g'
-      Just evenW = atMay wordlist r2 >>= Just . fst
-      Just oddW = atMay wordlist r1 >>= Just . snd
+      Just evenW = fst <$> atMay wordlist r2
+      Just oddW = snd <$> atMay wordlist r1
   return $ Text.concat [oddW, "-", evenW]
 
 -- | A password used to exchange with a Magic Wormhole peer.
