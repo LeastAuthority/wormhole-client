@@ -5,7 +5,7 @@ name:                wormhole
 version:             0.1.0.0
 synopsis:            A magic-wormhole client
 -- description:         
-license:             Apache-2.0
+license:             GPL-3
 license-file:        LICENSE
 author:              Ramakrishnan Muthukrishnan
 maintainer:          ram@leastauthority.com
