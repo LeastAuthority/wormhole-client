@@ -3,5 +3,8 @@
 ** make it work for text messages via custom input codes. (DONE)
 ** PGP word list support. (DONE)
 ** command completion for code input. (DONE)
+** Setup CI system
+** Add any relevant tests
+** Try to optimize the wordlist completion in receive (256*2 entry table instead of 256*256 entries)
 ** support for transit protocol for files.
 ** support for directory transfers via transit protocol.
