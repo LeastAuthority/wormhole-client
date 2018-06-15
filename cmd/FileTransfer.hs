@@ -47,16 +47,13 @@ data ConnectionHint
   deriving (Eq, Show)
 
 data Transit
-  = Transit { abilities :: Ability
-            , hints :: Hint }
+  = Transit { abilities :: [ConnectionType]
+            , hints :: [ConnectionHint] }
   deriving (Eq, Show)
 
 instance ToJSON ConnectionType where
   toJSON DirectTCP = object [ "type" .= String "direct-tcp-v1" ]
   toJSON RelayTCP  = object [ "type" .= String "relay-v1" ]
-
-instance ToJSON Ability where
-   toJSON (Ability abilities') = object [ "abilities-v1" .= toJSON abilities' ]
 
 instance ToJSON ConnectionHint where
   toJSON (Direct name' prio hostname' port') = object [ "type" .= name'
@@ -73,12 +70,9 @@ instance FromJSON ConnectionHint where
     <*> o .: "port"
   -- TODO: 'asum' of Relay Hint parsing as well.
 
-instance ToJSON Hint where
-  toJSON (Hint hints') = object [ "hints-v1" .= toJSON hints' ]
-
 instance ToJSON Transit where
-  toJSON (Transit (Ability as) (Hint hs)) = object [ "abilities-v1" .= toJSON as
-                                                   , "hints-v1" .= toJSON hs ]
+  toJSON (Transit as hs) = object [ "abilities-v1" .= toJSON as
+                                  , "hints-v1" .= toJSON hs ]
   
 type Password = ByteString
 
