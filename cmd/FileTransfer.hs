@@ -1,8 +1,8 @@
 module FileTransfer
---  (
---    sendFile
+  (
+    sendFile
 --  , receiveFile
---  )
+  )
 where
 
 import Protolude
@@ -17,7 +17,6 @@ import Data.Aeson
   , object
   , withObject
   , encode
-  , pairs
   , Value(String)
   )
 

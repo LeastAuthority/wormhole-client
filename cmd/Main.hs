@@ -34,6 +34,7 @@ import qualified MagicWormhole
 
 import Paths_hwormhole
 import Helper
+import FileTransfer
 
 data Options
   = Options
