@@ -33,6 +33,7 @@ import System.Random (randomR, getStdGen)
 import qualified MagicWormhole
 
 import Paths_hwormhole
+import Helper
 
 data Options
   = Options
@@ -125,13 +126,6 @@ allocatePassword wordlist = do
 -- XXX: Just picking ByteString because that's the least amount of work. Need
 -- to look up exact type of password in the magic-wormhole docs.
 type Password = ByteString
-
-printSendHelpText :: Text -> IO ()
-printSendHelpText passcode = do
-  TIO.putStrLn $  "Wormhole code is: " <> passcode
-  TIO.putStrLn "On the other computer, please run:"
-  TIO.putStrLn ""
-  TIO.putStrLn $ "wormhole receive " <> passcode
 
 -- | Send a text message to a Magic Wormhole peer.
 sendText :: MagicWormhole.Session -> Password -> Text -> IO ()
