@@ -19,6 +19,8 @@ data-files:          wordlist.txt
 executable hwormhole
   main-is:             Main.hs
   other-modules:       Paths_hwormhole
+                     , FileTransfer
+                     , Helper
   -- other-extensions:    
   build-depends:       base >=4.11 && <4.12
                      , aeson
