@@ -26,9 +26,11 @@ executable hwormhole
                      , aeson
                      , haskeline
                      , magic-wormhole
-                     , protolude
+                     , network
                      , optparse-applicative
+                     , protolude
                      , random
+                     , scientific
                      , spake2 >= 0.4
                      , text
                      , unix

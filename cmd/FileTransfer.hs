@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module FileTransfer
   (
     sendFile
@@ -16,8 +17,32 @@ import Data.Aeson
   , (.=)
   , object
   , withObject
+  , withScientific
   , encode
   , Value(String)
+  )
+import qualified Control.Exception as E
+import Network.Socket
+  ( PortNumber
+  , addrSocketType
+  , addrFlags
+  , socketPort
+  , addrAddress
+  , addrProtocol
+  , addrFamily
+  , getAddrInfo
+  , SocketType ( Stream )
+  , close
+  , socket
+  , bind
+  , defaultHints
+  , defaultPort
+  , setSocketOption
+  , SocketOption( ReuseAddr )
+  , AddrInfoFlag ( AI_NUMERICSERV )
+  )
+import Data.Scientific
+  ( coefficient
   )
 
 import qualified MagicWormhole
@@ -37,11 +62,14 @@ newtype Hint
   = Hint [ConnectionHint]
   deriving (Eq, Show)
 
+newtype PortNum = PortNum { getPortNumber :: PortNumber }
+  deriving (Eq, Show, Integral, Real, Enum, Num, Ord)
+
 data ConnectionHint
   = Direct { name :: Text
            , priority :: Double
            , hostname :: Text
-           , port :: Integer }
+           , port :: PortNum }
     -- TODO: or Relay Hint
   deriving (Eq, Show)
 
@@ -54,12 +82,18 @@ instance ToJSON ConnectionType where
   toJSON DirectTCP = object [ "type" .= String "direct-tcp-v1" ]
   toJSON RelayTCP  = object [ "type" .= String "relay-v1" ]
 
+instance ToJSON PortNum where
+  toJSON n = toJSON $ toInteger n
+
 instance ToJSON ConnectionHint where
   toJSON (Direct name' prio hostname' port') = object [ "type" .= name'
                                                       , "priority" .= prio
                                                       , "hostname" .= hostname'
                                                       , "port" .= port' ]
   -- TODO: add Relay and the encoding for it.
+
+instance FromJSON PortNum where
+  parseJSON = withScientific "PortNumber" (return . fromInteger . coefficient)
 
 instance FromJSON ConnectionHint where
   parseJSON = withObject "Connection Hint" $ \o -> Direct
@@ -74,6 +108,16 @@ instance ToJSON Transit where
                                                         , "hints-v1" .= toJSON hs ] ]
   
 type Password = ByteString
+
+allocateTcpPort :: IO PortNumber
+allocateTcpPort = E.bracket setup close socketPort
+  where setup = do
+          let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
+          addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show defaultPort))
+          sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+          _ <- setSocketOption sock ReuseAddr 1
+          _ <- bind sock (addrAddress addr)
+          return sock
 
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
@@ -91,9 +135,10 @@ sendFile session password filepath = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- create abilities
-        -- send transit message via wormhole as an ordinary message
         let abilities' = [DirectTCP]
-        let hints' = [Direct "direct-hint-v1" 0.0 "127.0.0.1" 4848]
+        port' <- allocateTcpPort
+        let hints' = [Direct "direct-hint-v1" 0.0 "127.0.0.1" (PortNum port')]
+        -- create transit message
         let transitMsg = Transit abilities' hints'
         let encodedTransitMsg = toS (encode transitMsg)
         -- send the transit message (dictionary with key as "transit" and value as abilities)
