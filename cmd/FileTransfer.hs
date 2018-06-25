@@ -44,6 +44,13 @@ import Network.Socket
 import Data.Scientific
   ( coefficient
   )
+import System.Posix.Files
+  ( getFileStatus
+  , fileSize
+  )
+import System.Posix.Types
+  ( FileOffset
+  )
 
 import qualified MagicWormhole
 
@@ -119,6 +126,9 @@ allocateTcpPort = E.bracket setup close socketPort
           _ <- bind sock (addrAddress addr)
           return sock
 
+getFileSize :: FilePath -> IO FileOffset
+getFileSize file = fileSize <$> getFileStatus file
+
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 
@@ -149,7 +159,8 @@ sendFile session password filepath = do
         TIO.putStrLn (toS answerMsg)
 
         -- send file offer message
-        let fileOffer = MagicWormhole.File (toS filepath) 10
+        fileSize <- getFileSize filepath
+        let fileOffer = MagicWormhole.File (toS filepath) fileSize
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
 
         -- receive file ack message {"answer": {"file_ack": "ok"}}
