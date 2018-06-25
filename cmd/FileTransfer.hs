@@ -19,6 +19,7 @@ import Data.Aeson
   , withObject
   , withScientific
   , encode
+  , eitherDecode
   , Value(String)
   )
 import qualified Control.Exception as E
@@ -77,6 +78,7 @@ data ConnectionHint
            , priority :: Double
            , hostname :: Text
            , port :: PortNum }
+
     -- TODO: or Relay Hint
   deriving (Eq, Show)
 
@@ -86,11 +88,21 @@ data Transit
   deriving (Eq, Show)
 
 instance ToJSON ConnectionType where
-  toJSON DirectTCP = object [ "type" .= String "direct-tcp-v1" ]
-  toJSON RelayTCP  = object [ "type" .= String "relay-v1" ]
+  toJSON DirectTCP = object [ "type" .= ("direct-tcp-v1" :: Text) ]
+  toJSON RelayTCP  = object [ "type" .= ("relay-v1" :: Text) ]
+
+instance FromJSON ConnectionType where
+  parseJSON = withObject "ConnectionType" $ \o -> do
+    kind <- o .: "type"
+    case (kind :: Text) of
+      "direct-tcp-v1" -> return DirectTCP
+      "relay-v1" -> return RelayTCP
 
 instance ToJSON PortNum where
   toJSON n = toJSON $ toInteger n
+
+instance FromJSON PortNum where
+  parseJSON = withScientific "PortNumber" (return . fromInteger . coefficient)
 
 instance ToJSON ConnectionHint where
   toJSON (Direct name' prio hostname' port') = object [ "type" .= name'
@@ -98,9 +110,6 @@ instance ToJSON ConnectionHint where
                                                       , "hostname" .= hostname'
                                                       , "port" .= port' ]
   -- TODO: add Relay and the encoding for it.
-
-instance FromJSON PortNum where
-  parseJSON = withScientific "PortNumber" (return . fromInteger . coefficient)
 
 instance FromJSON ConnectionHint where
   parseJSON = withObject "Connection Hint" $ \o -> Direct
@@ -113,6 +122,11 @@ instance FromJSON ConnectionHint where
 instance ToJSON Transit where
   toJSON (Transit as hs) = object [ "transit" .= object [ "abilities-v1" .= toJSON as
                                                         , "hints-v1" .= toJSON hs ] ]
+
+instance FromJSON Transit where
+  parseJSON = withObject "Transit" $ \o -> Transit
+    <$> o .: "abilities"
+    <*> o .: "hints"
   
 type Password = ByteString
 
@@ -158,19 +172,29 @@ sendFile session password filepath = do
         MagicWormhole.PlainText answerMsg <- atomically $ MagicWormhole.receiveMessage conn
         TIO.putStrLn (toS answerMsg)
 
-        -- send file offer message
-        fileSize <- getFileSize filepath
-        let fileOffer = MagicWormhole.File (toS filepath) fileSize
-        MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
+        -- TODO: parse peer's transit message
+        let eitherTransitFromPeer = eitherDecode (toS answerMsg)
+        case eitherTransitFromPeer of
+          Left s -> TIO.putStrLn "unable to decode transit message from peer"
+          Right transitMsgFromPeer -> do
+            TIO.putStrLn transitMsgFromPeer
 
-        -- receive file ack message {"answer": {"file_ack": "ok"}}
-        -- TODO: verify that file_ack is "ok"
-        MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
-        TIO.putStrLn (toS rxFileOffer)
+            -- send file offer message
+            fileSize <- getFileSize filepath
+            let fileOffer = MagicWormhole.File (toS filepath) fileSize
+            MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
 
-        -- we are now ready to prepare for the TCP communication
-        -- TODO derive a transit key
-        return ()
+            -- receive file ack message {"answer": {"file_ack": "ok"}}
+            -- TODO: verify that file_ack is "ok"
+            MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
+            TIO.putStrLn (toS rxFileOffer)
+
+            -- TODO: parse offer message from the peer
+
+            -- we are now ready to prepare for the TCP communication
+            -- TODO derive a transit key
+
+            return ()
     )
 
 --   -- * establish the tcp connection with the peer/relay
