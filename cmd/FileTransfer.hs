@@ -8,6 +8,7 @@ module FileTransfer
   , ConnectionType(..)
   , ConnectionHint(..)
   , PortNum(..)
+  , Transit(..)
   )
 where
 
@@ -125,9 +126,8 @@ instance ToJSON Transit where
                                                         , "hints-v1" .= toJSON hs ] ]
 
 instance FromJSON Transit where
-  parseJSON = withObject "Transit" $ \o -> Transit
-    <$> o .: "abilities"
-    <*> o .: "hints"
+  parseJSON = withObject "Transit" $ \o ->
+    o .: "transit" >>= (\x -> Transit <$> x .: "abilities-v1" <*> x .: "hints-v1")
   
 type Password = ByteString
 

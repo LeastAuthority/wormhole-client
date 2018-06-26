@@ -44,4 +44,32 @@ tests = hspec $ do
   describe "ConnectionType tests" $ do
     it "encode connection type DirectTCP" $ do
       encode DirectTCP `shouldBe` "{\"type\":\"direct-tcp-v1\"}"
+    it "encode connection type RelayTCP" $ do
       encode RelayTCP `shouldBe` "{\"type\":\"relay-v1\"}"
+    it "decode connection type DirectTCP" $ do
+      decode "{\"type\":\"direct-tcp-v1\"}" `shouldBe` Just DirectTCP
+    it "decode connection type RelayTCP" $ do
+      decode "{\"type\":\"relay-v1\"}" `shouldBe` Just RelayTCP
+  describe "Transit tests" $ do
+    it "encode transit message with only direct hint" $ do
+      let connHint1 = Direct { name = "direct-tcp-v1"
+                             , priority = 1.5
+                             , hostname = "127.0.0.1"
+                             , port = PortNum 10110 }
+          connectionType' = DirectTCP
+          abilities' = [connectionType']
+          hints' = [connHint1]
+          transitMsg = Transit abilities' hints'
+      encode transitMsg `shouldBe` "{\"transit\":{\"hints-v1\":[{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"}]}}"
+    it "decode transit message with only direct hint" $ do
+      let transitMsg = "{\"transit\":{\"hints-v1\":[{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"}]}}"
+      decode transitMsg `shouldBe` Just (Transit abilities' hints')
+        where
+          abilities' = [connectionType']
+          hints' = [connHint1]
+          connectionType' = DirectTCP
+          connHint1 = Direct { name = "direct-tcp-v1"
+                             , priority = 1.5
+                             , hostname = "127.0.0.1"
+                             , port = PortNum 10110 }
+
