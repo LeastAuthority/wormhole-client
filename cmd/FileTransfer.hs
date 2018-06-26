@@ -5,6 +5,7 @@ module FileTransfer
     sendFile
 --  , receiveFile
   -- for tests
+  , ConnectionType(..)
   , ConnectionHint(..)
   , PortNum(..)
   )
@@ -66,14 +67,6 @@ import Helper
 data ConnectionType
   = DirectTCP
   | RelayTCP
-  deriving (Eq, Show)
-
-newtype Ability
-  = Ability [ConnectionType]
-    deriving (Eq, Show)
-
-newtype Hint
-  = Hint [ConnectionHint]
   deriving (Eq, Show)
 
 newtype PortNum = PortNum { getPortNumber :: PortNumber }
