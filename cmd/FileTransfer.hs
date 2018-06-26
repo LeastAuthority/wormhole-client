@@ -1,12 +1,17 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 module FileTransfer
   (
     sendFile
 --  , receiveFile
+  -- for tests
+  , ConnectionHint(..)
+  , PortNum(..)
   )
 where
 
 import Protolude
+-- import GHC.Generics
 
 import qualified Data.Text.IO as TIO
 import qualified Crypto.Spake2 as Spake2
@@ -22,6 +27,7 @@ import Data.Aeson
   , eitherDecode
   , Value(String)
   )
+
 import qualified Control.Exception as E
 import Network.Socket
   ( PortNumber
@@ -78,8 +84,10 @@ data ConnectionHint
            , priority :: Double
            , hostname :: Text
            , port :: PortNum }
-
-    -- TODO: or Relay Hint
+  | Relay { name :: Text
+          , priority :: Double
+          , hostname :: Text
+          , port :: PortNum }
   deriving (Eq, Show)
 
 data Transit
@@ -88,8 +96,8 @@ data Transit
   deriving (Eq, Show)
 
 instance ToJSON ConnectionType where
-  toJSON DirectTCP = object [ "type" .= ("direct-tcp-v1" :: Text) ]
-  toJSON RelayTCP  = object [ "type" .= ("relay-v1" :: Text) ]
+  toJSON DirectTCP = object [ "type" .= (String "direct-tcp-v1") ]
+  toJSON RelayTCP  = object [ "type" .= (String "relay-v1") ]
 
 instance FromJSON ConnectionType where
   parseJSON = withObject "ConnectionType" $ \o -> do
@@ -99,7 +107,7 @@ instance FromJSON ConnectionType where
       "relay-v1" -> return RelayTCP
 
 instance ToJSON PortNum where
-  toJSON n = toJSON $ toInteger n
+  toJSON n = toJSON $ (toInteger n)
 
 instance FromJSON PortNum where
   parseJSON = withScientific "PortNumber" (return . fromInteger . coefficient)
@@ -109,15 +117,15 @@ instance ToJSON ConnectionHint where
                                                       , "priority" .= prio
                                                       , "hostname" .= hostname'
                                                       , "port" .= port' ]
-  -- TODO: add Relay and the encoding for it.
+  toJSON (Relay name' prio hostname' port') = object [ "type" .= name'
+                                                     , "priority" .= prio
+                                                     , "hostname" .= hostname'
+                                                     , "port" .= port' ]
 
 instance FromJSON ConnectionHint where
-  parseJSON = withObject "Connection Hint" $ \o -> Direct
-    <$> o .: "name"
-    <*> o .: "priority"
-    <*> o .: "hostname"
-    <*> o .: "port"
-  -- TODO: 'asum' of Relay Hint parsing as well.
+  parseJSON = withObject "Connection Hint" $ \o -> asum [
+    Direct <$> o .: "type" <*> o .: "priority" <*> o .: "hostname" <*> o .: "port",
+    Relay <$> o .: "type" <*> o .: "priority" <*> o .: "hostname" <*> o .: "port" ]
 
 instance ToJSON Transit where
   toJSON (Transit as hs) = object [ "transit" .= object [ "abilities-v1" .= toJSON as
@@ -175,7 +183,7 @@ sendFile session password filepath = do
         -- TODO: parse peer's transit message
         let eitherTransitFromPeer = eitherDecode (toS answerMsg)
         case eitherTransitFromPeer of
-          Left s -> TIO.putStrLn "unable to decode transit message from peer"
+          Left s -> TIO.putStrLn ("unable to decode transit message from peer: " <> toS s)
           Right transitMsgFromPeer -> do
             TIO.putStrLn transitMsgFromPeer
 
