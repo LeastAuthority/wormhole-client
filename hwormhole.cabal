@@ -38,3 +38,30 @@ executable hwormhole
   default-language:    Haskell2010
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
   ghc-options: -Wall
+
+test-suite hwormhole-tests
+  type: exitcode-stdio-1.0
+  main-is: Tasty.hs
+  hs-source-dirs:
+                 tests
+               , cmd
+  default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
+  ghc-options: -Wall
+  build-depends:       base >=4.11 && <4.12
+                     , aeson
+                     , haskeline
+                     , magic-wormhole
+                     , network
+                     , optparse-applicative
+                     , protolude
+                     , random
+                     , scientific
+                     , spake2 >= 0.4
+                     , text
+                     , unix
+                     , hspec
+                     , QuickCheck
+  other-modules: FileTransfer
+               , Helper
+               , FileTransferTests
+  default-language: Haskell2010
