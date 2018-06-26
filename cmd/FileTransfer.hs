@@ -112,9 +112,10 @@ instance ToJSON ConnectionHint where
                                                       , "hostname" .= hostname'
                                                       , "port" .= port' ]
   toJSON (Relay name' prio hostname' port') = object [ "type" .= name'
-                                                     , "priority" .= prio
-                                                     , "hostname" .= hostname'
-                                                     , "port" .= port' ]
+                                                     , "hints" .= object [ "priority" .= prio
+                                                                         , "hostname" .= hostname'
+                                                                         , "port" .= port'
+                                                                         , "type" .= (String "direct-tcp-v1") ] ]
 
 instance FromJSON ConnectionHint where
   parseJSON = withObject "Connection Hint" $ \o -> asum [
