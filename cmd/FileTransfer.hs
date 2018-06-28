@@ -2,38 +2,54 @@
 {-# LANGUAGE DeriveGeneric #-}
 module FileTransfer
   (
-    sendFile
---  , receiveFile
+--    sendFile
   -- for tests
-  , ConnectionType(..)
+    Ability(..)
+  , Hint(..)
   , ConnectionHint(..)
-  , PortNum(..)
   , Transit(..)
+  , abilities'
   )
 where
 
 import Protolude
--- import GHC.Generics
+import GHC.Generics
 
 import qualified Data.Text.IO as TIO
 import qualified Crypto.Spake2 as Spake2
 import Data.Aeson
   ( FromJSON(..)
   , ToJSON(..)
+  , genericToJSON
+  , genericToEncoding
+  , genericParseJSON
+  , defaultOptions
+  , defaultTaggedObject
+  , fieldLabelModifier
+  , constructorTagModifier
+  , allNullaryToStringTag
+  , sumEncoding
+  , SumEncoding(..)
+  , camelTo2
   , (.:)
   , (.=)
   , object
   , withObject
   , withScientific
+  , withArray
   , encode
+  , decode
   , eitherDecode
-  , Value(String)
+  , Value(String, Array)
+  )
+import Data.Aeson.Types
+  ( Parser
+  , parseMaybe
   )
 
 import qualified Control.Exception as E
 import Network.Socket
-  ( PortNumber
-  , addrSocketType
+  ( addrSocketType
   , addrFlags
   , socketPort
   , addrAddress
@@ -60,76 +76,92 @@ import System.Posix.Files
 import System.Posix.Types
   ( FileOffset
   )
+import qualified Data.Vector as V
+import qualified Data.HashMap.Strict as HM
 
 import qualified MagicWormhole
 
 import Helper
 
-data ConnectionType
-  = DirectTCP
-  | RelayTCP
-  deriving (Eq, Show)
+data Ability
+  = DirectTcpV1
+  | RelayV1
+  deriving (Eq, Show, Generic)
 
-newtype PortNum = PortNum { getPortNumber :: PortNumber }
-  deriving (Eq, Show, Integral, Real, Enum, Num, Ord)
+instance ToJSON Ability where
+  toJSON = genericToJSON
+    defaultOptions { constructorTagModifier = camelTo2 '-'}
+
+instance FromJSON Ability where
+  parseJSON = genericParseJSON
+    defaultOptions { constructorTagModifier = camelTo2 '-'}
+
+data Hint = Hint { ctype :: Ability
+                 , priority :: Double
+                 , hostname :: Text
+                 , port :: Word16 }
+          deriving (Eq, Show, Generic)
+
+instance ToJSON Hint where
+  toJSON = genericToJSON
+    defaultOptions { fieldLabelModifier =
+                       \name -> case name of
+                                  "ctype" -> "type"
+                                  _ -> name }
+
+instance FromJSON Hint where
+  parseJSON = genericParseJSON
+    defaultOptions { fieldLabelModifier =
+                       \name -> case name of
+                                  "ctype" -> "type"
+                                  _ -> name }
 
 data ConnectionHint
-  = Direct { name :: Text
-           , priority :: Double
-           , hostname :: Text
-           , port :: PortNum }
-  | Relay { name :: Text
-          , priority :: Double
-          , hostname :: Text
-          , port :: PortNum }
-  deriving (Eq, Show)
-
-data Transit
-  = Transit { abilities :: [ConnectionType]
-            , hints :: [ConnectionHint] }
-  deriving (Eq, Show)
-
-instance ToJSON ConnectionType where
-  toJSON DirectTCP = object [ "type" .= (String "direct-tcp-v1") ]
-  toJSON RelayTCP  = object [ "type" .= (String "relay-v1") ]
-
-instance FromJSON ConnectionType where
-  parseJSON = withObject "ConnectionType" $ \o -> do
-    kind <- o .: "type"
-    case (kind :: Text) of
-      "direct-tcp-v1" -> return DirectTCP
-      "relay-v1" -> return RelayTCP
-
-instance ToJSON PortNum where
-  toJSON n = toJSON $ (toInteger n)
-
-instance FromJSON PortNum where
-  parseJSON = withScientific "PortNumber" (return . fromInteger . coefficient)
+  = Direct Hint
+  | Tor Hint
+  | Relay { rtype :: Ability
+          , hints :: [Hint] }
+  deriving (Eq, Show, Generic)
 
 instance ToJSON ConnectionHint where
-  toJSON (Direct name' prio hostname' port') = object [ "type" .= name'
-                                                      , "priority" .= prio
-                                                      , "hostname" .= hostname'
-                                                      , "port" .= port' ]
-  toJSON (Relay name' prio hostname' port') = object [ "type" .= name'
-                                                     , "hints" .= object [ "priority" .= prio
-                                                                         , "hostname" .= hostname'
-                                                                         , "port" .= port'
-                                                                         , "type" .= (String "direct-tcp-v1") ] ]
-
+  toJSON = genericToJSON
+    defaultOptions { sumEncoding = UntaggedValue
+                   , fieldLabelModifier =
+                       \name -> case name of
+                                  "rtype" -> "type"
+                                  _ -> name }
 instance FromJSON ConnectionHint where
-  parseJSON = withObject "Connection Hint" $ \o -> asum [
-    Direct <$> o .: "type" <*> o .: "priority" <*> o .: "hostname" <*> o .: "port",
-    Relay <$> o .: "type" <*> o .: "priority" <*> o .: "hostname" <*> o .: "port" ]
+  parseJSON = genericParseJSON
+    defaultOptions { sumEncoding = UntaggedValue
+                   , fieldLabelModifier =
+                       \name -> case name of
+                                  "rtype" -> "type"
+                                  _ -> name }
+
+
+data Transit
+  = Transit { abilitiesV1 :: [Ability]
+            , hintsV1 :: [ConnectionHint] }
+  deriving (Eq, Show)
 
 instance ToJSON Transit where
-  toJSON (Transit as hs) = object [ "transit" .= object [ "abilities-v1" .= toJSON as
+  toJSON (Transit as hs) = object [ "transit" .= object [ "abilities-v1" .= map (\x -> object [ "type" .= toJSON x ]) as
                                                         , "hints-v1" .= toJSON hs ] ]
+
+abilities' :: Value -> Parser [Ability]
+abilities' = withArray "array of key objects" $ \arr ->
+               mapM (withObject "obj" $ \o -> o .: "type") (V.toList arr)
 
 instance FromJSON Transit where
   parseJSON = withObject "Transit" $ \o ->
-    o .: "transit" >>= (\x -> Transit <$> x .: "abilities-v1" <*> x .: "hints-v1")
-  
+    o .: "transit" >>=
+    (\x -> do
+        av <- x .: "abilities-v1"
+        let vs = abilities' av
+        Transit <$> vs <*> x .: "hints-v1")
+
+{-|
+
 type Password = ByteString
 
 allocateTcpPort :: IO PortNumber
@@ -214,3 +246,4 @@ sendFile session password filepath = do
   
   
 -- receiveFile :: Session -> Passcode -> IO Status
+|-}
