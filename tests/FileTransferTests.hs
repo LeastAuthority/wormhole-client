@@ -85,87 +85,21 @@ tests = hspec $ do
                     , port = 1234 }
           ch2 = Relay { rtype = RelayV1
                       , hints = [h2] }
+          h3 = Hint { ctype = DirectTcpV1
+                    , priority = 0.0
+                    , hostname = "192.168.1.106"
+                    , port = 36097 }
+          ch3 = Direct h3
+          h4 = Hint { ctype = DirectTcpV1
+                    , priority = 0.0
+                    , hostname = "transit.magic-wormhole.io"
+                    , port = 4001 }
+          ch4 = Relay { rtype = RelayV1
+                      , hints = [h4] }
+          t2 = Transit { abilitiesV1 = [DirectTcpV1,RelayV1]
+                       , hintsV1 = [ch3 ,ch4] }
           t1text = "{\"transit\":{\"hints-v1\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234},{\"hints\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}],\"type\":\"relay-v1\"}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"},{\"type\":\"relay-v1\"}]}}" :: Text
+          t2text = "{\"transit\": {\"abilities-v1\": [{\"type\": \"direct-tcp-v1\"}, {\"type\": \"relay-v1\"}], \"hints-v1\": [{\"priority\": 0.0, \"hostname\": \"192.168.1.106\", \"type\": \"direct-tcp-v1\", \"port\": 36097}, {\"type\": \"relay-v1\", \"hints\": [{\"priority\": 0.0, \"hostname\": \"transit.magic-wormhole.io\", \"type\": \"direct-tcp-v1\", \"port\": 4001}]}]}}" :: ByteString
       decode (encode t1) `shouldBe` (Just t1)
+      decode (toS t2text) `shouldBe` Just t2
 
-
-{-|
-tests :: IO ()
-tests = hspec $ do
-  describe "PortNum tests" $ do
-    it "encode portnum" $ do
-      let port = PortNum 8080
-      encode port `shouldBe` "8080"
-    it "decode portnum" $ do
-      decode "8080" `shouldBe` Just (PortNum 8080)
-    it "encode-decode cycle for portnum" $ do
-      decode (encode (PortNum 8080)) `shouldBe` Just (PortNum 8080)
-  describe "ConnectionHint tests" $ do
-    it "encode direct hint" $ do
-      let directHint1 = Direct { name = "direct-tcp-v1"
-                               , priority = 1.5
-                               , hostname = "127.0.0.1"
-                               , port = PortNum 10110 }
-      encode directHint1 `shouldBe`
-        "{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110}"
-    it "encode and decode direct hint" $ do
-      let directHint1 = Direct { name = "direct-tcp-v1"
-                               , priority = 1.5
-                               , hostname = "127.0.0.1"
-                               , port = PortNum 10110 }
-      decode (encode directHint1) `shouldBe`
-        Just directHint1
-  describe "ConnectionType tests" $ do
-    it "encode connection type DirectTCP" $ do
-      encode DirectTCP `shouldBe` "{\"type\":\"direct-tcp-v1\"}"
-    it "encode connection type RelayTCP" $ do
-      encode RelayTCP `shouldBe` "{\"type\":\"relay-v1\"}"
-    it "decode connection type DirectTCP" $ do
-      decode "{\"type\":\"direct-tcp-v1\"}" `shouldBe` Just DirectTCP
-    it "decode connection type RelayTCP" $ do
-      decode "{\"type\":\"relay-v1\"}" `shouldBe` Just RelayTCP
-  describe "Transit tests" $ do
-    it "encode transit message with only direct hint" $ do
-      let connHint1 = Direct { name = "direct-tcp-v1"
-                             , priority = 1.5
-                             , hostname = "127.0.0.1"
-                             , port = PortNum 10110 }
-          connectionType' = DirectTCP
-          abilities' = [connectionType']
-          hints' = [connHint1]
-          transitMsg = Transit abilities' hints'
-      encode transitMsg `shouldBe` "{\"transit\":{\"hints-v1\":[{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"}]}}"
-
-    it "decode transit message with only direct hint" $ do
-      let transitMsg = "{\"transit\":{\"hints-v1\":[{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"}]}}"
-          abilities' = [connectionType']
-          hints' = [connHint1]
-          connectionType' = DirectTCP
-          connHint1 = Direct { name = "direct-tcp-v1"
-                             , priority = 1.5
-                             , hostname = "127.0.0.1"
-                             , port = PortNum 10110 }
-      decode transitMsg `shouldBe` Just (Transit abilities' hints')
-
-    it "encode transit message with direct and relay hints" $ do
-      let connHint1 = Direct { name = "direct-tcp-v1"
-                             , priority = 1.5
-                             , hostname = "127.0.0.1"
-                             , port = PortNum 10110 }
-          connHint2 = Relay { name = "relay-v1"
-                             , priority = 1.5
-                             , hostname = "transit.magic-wormhole.io"
-                             , port = PortNum 10110 }
-          abilities' = [DirectTCP, RelayTCP]
-          hints' = [connHint1, connHint2]
-          transitMsg = Transit abilities' hints'
-      encode transitMsg `shouldBe` "{\"transit\":{\"hints-v1\":[{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110},{\"hints\":[{\"hostname\":\"transit.magic-wormhole.io\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110}],\"type\":\"relay-v1\"}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"},{\"type\":\"relay-v1\"}]}}"
-
-    it "decode transit message with direct and relay hints" $ do
-      let transitMsg = "{\"transit\":{\"hints-v1\":[{\"hostname\":\"127.0.0.1\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110},{\"hints\":{\"hostname\":\"transit.magic-wormhole.io\",\"priority\":1.5,\"type\":\"direct-tcp-v1\",\"port\":10110},\"type\":\"relay-v1\"}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"},{\"type\":\"relay-v1\"}]}}"
-      decode transitMsg `shouldBe` (Just (Transit {abilities = [DirectTCP,RelayTCP], hints = [Direct {name = "direct-tcp-v1", priority = 1.5, hostname = "127.0.0.1", port = PortNum {getPortNumber = 10110}},Relay {name = "direct-tcp-v1", priority = 1.5, hostname = "transit.magic-wormhole.io", port = PortNum {getPortNumber = 10110}}]}))
-
-    it "decode transit message" $ do
-      let transitMsg = "{\"transit\": {\"abilities-v1\": [{\"type\": \"direct-tcp-v1\"}, {\"type\": \"relay-v1\"}], \"hints-v1\": [{\"priority\": 0.0, \"hostname\": \"192.168.1.106\", \"type\": \"direct-tcp-v1\", \"port\": 41319}, {\"type\": \"relay-v1\", \"hints\": [{\"priority\": 0.0, \"hostname\": \"transit.magic-wormhole.io\", \"type\": \"direct-tcp-v1\", \"port\": 4001}]}]}}"
-
-|-}

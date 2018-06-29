@@ -1,10 +1,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module FileTransfer
   (
---    sendFile
+    sendFile
   -- for tests
-    Ability(..)
+  , Ability(..)
   , Hint(..)
   , ConnectionHint(..)
   , Transit(..)
@@ -50,6 +51,7 @@ import Data.Aeson.Types
 import qualified Control.Exception as E
 import Network.Socket
   ( addrSocketType
+  , PortNumber
   , addrFlags
   , socketPort
   , addrAddress
@@ -156,11 +158,10 @@ instance FromJSON Transit where
   parseJSON = withObject "Transit" $ \o ->
     o .: "transit" >>=
     (\x -> do
-        av <- x .: "abilities-v1"
-        let vs = abilities' av
-        Transit <$> vs <*> x .: "hints-v1")
-
-{-|
+        --av <- x .: "abilities-v1"
+        let --vs = abilities' av
+            hs = x .: "hints-v1"
+        Transit <$> (return []) <*> hs)
 
 type Password = ByteString
 
@@ -193,21 +194,23 @@ sendFile session password filepath = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- create abilities
-        let abilities' = [DirectTCP]
+        let abilities' = [DirectTcpV1]
         port' <- allocateTcpPort
-        let hints' = [Direct "direct-hint-v1" 0.0 "127.0.0.1" (PortNum port')]
+        let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
+        let hints' = [Direct hint]
         -- create transit message
-        let transitMsg = Transit abilities' hints'
-        let encodedTransitMsg = toS (encode transitMsg)
+        let txTransitMsg = Transit abilities' hints'
+        let encodedTransitMsg = toS (encode txTransitMsg)
         -- send the transit message (dictionary with key as "transit" and value as abilities)
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
         -- receive the transit from the receiving side
-        MagicWormhole.PlainText answerMsg <- atomically $ MagicWormhole.receiveMessage conn
-        TIO.putStrLn (toS answerMsg)
+        MagicWormhole.PlainText ansTransitMsg <- atomically $ MagicWormhole.receiveMessage conn
+        TIO.putStrLn "message from the peer"
+        TIO.putStrLn (toS ansTransitMsg)
 
         -- TODO: parse peer's transit message
-        let eitherTransitFromPeer = eitherDecode (toS answerMsg)
+        let eitherTransitFromPeer = eitherDecode (show ansTransitMsg)
         case eitherTransitFromPeer of
           Left s -> TIO.putStrLn ("unable to decode transit message from peer: " <> toS s)
           Right transitMsgFromPeer -> do
@@ -246,4 +249,4 @@ sendFile session password filepath = do
   
   
 -- receiveFile :: Session -> Passcode -> IO Status
-|-}
+
