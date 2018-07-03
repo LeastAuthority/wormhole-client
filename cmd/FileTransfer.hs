@@ -230,13 +230,11 @@ sendFile session password filepath = do
 
         -- receive the transit from the receiving side
         MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
-        TIO.putStrLn "message from the peer"
-        TIO.putStrLn (toS responseMsg)
-        -- "show" needed to quote the incoming json
-        case (eitherDecode (show responseMsg)) of
-          Left s -> TIO.putStrLn "unable to decode the response to transit msg"
+        case (eitherDecode (toS responseMsg)) of
+          Left s -> TIO.putStrLn ("unable to decode the response to transit msg: " <> (toS s))
           Right (Error errstr) -> TIO.putStrLn ("error msg from peer: " <> errstr)
           Right t@(Transit abilities' hints') -> do
+            TIO.putStrLn "got a transit message as a response"
             TIO.putStrLn (show t)
 
             -- send file offer message
