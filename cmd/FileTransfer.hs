@@ -16,63 +16,11 @@ module FileTransfer
 where
 
 import Protolude
-import GHC.Generics
 
 import qualified Data.Text.IO as TIO
 import qualified Crypto.Spake2 as Spake2
-import Data.Aeson
-  ( FromJSON(..)
-  , ToJSON(..)
-  , genericToJSON
-  , genericToEncoding
-  , genericParseJSON
-  , defaultOptions
-  , defaultTaggedObject
-  , fieldLabelModifier
-  , constructorTagModifier
-  , allNullaryToStringTag
-  , sumEncoding
-  , SumEncoding(..)
-  , camelTo2
-  , (.:)
-  , (.=)
-  , object
-  , withObject
-  , withScientific
-  , withArray
-  , encode
-  , decode
-  , eitherDecode
-  , Value(String, Array)
-  )
-import Data.Aeson.Types
-  ( Parser
-  , parseMaybe
-  )
 
-import qualified Control.Exception as E
-import Network.Socket
-  ( addrSocketType
-  , PortNumber
-  , addrFlags
-  , socketPort
-  , addrAddress
-  , addrProtocol
-  , addrFamily
-  , getAddrInfo
-  , SocketType ( Stream )
-  , close
-  , socket
-  , bind
-  , defaultHints
-  , defaultPort
-  , setSocketOption
-  , SocketOption( ReuseAddr )
-  , AddrInfoFlag ( AI_NUMERICSERV )
-  )
-import Data.Scientific
-  ( coefficient
-  )
+
 import System.Posix.Files
   ( getFileStatus
   , fileSize
@@ -80,124 +28,20 @@ import System.Posix.Files
 import System.Posix.Types
   ( FileOffset
   )
-import qualified Data.Vector as V
-import qualified Data.HashMap.Strict as HM
+import Data.Aeson
+  ( encode
+  , eitherDecode
+  )
 
 import qualified MagicWormhole
+import FileTransfer.Internal.Network
+import FileTransfer.Internal.Protocol
 
 import Helper
 
-data AbilityV1
-  = DirectTcpV1
-  | RelayV1
-  deriving (Eq, Show, Generic)
-
-instance ToJSON AbilityV1 where
-  toJSON = genericToJSON
-    defaultOptions { constructorTagModifier = camelTo2 '-'}
-
-instance FromJSON AbilityV1 where
-  parseJSON = genericParseJSON
-    defaultOptions { constructorTagModifier = camelTo2 '-'}
-
-data Hint = Hint { ctype :: AbilityV1
-                 , priority :: Double
-                 , hostname :: Text
-                 , port :: Word16 }
-          deriving (Eq, Show, Generic)
-
-instance ToJSON Hint where
-  toJSON = genericToJSON
-    defaultOptions { fieldLabelModifier =
-                       \name -> case name of
-                                  "ctype" -> "type"
-                                  _ -> name }
-
-instance FromJSON Hint where
-  parseJSON = genericParseJSON
-    defaultOptions { fieldLabelModifier =
-                       \name -> case name of
-                                  "ctype" -> "type"
-                                  _ -> name }
-
-data ConnectionHint
-  = Direct Hint
-  | Tor Hint
-  | Relay { rtype :: AbilityV1
-          , hints :: [Hint] }
-  deriving (Eq, Show, Generic)
-
-instance ToJSON ConnectionHint where
-  toJSON = genericToJSON
-    defaultOptions { sumEncoding = UntaggedValue
-                   , fieldLabelModifier =
-                       \name -> case name of
-                                  "rtype" -> "type"
-                                  _ -> name }
-instance FromJSON ConnectionHint where
-  parseJSON = genericParseJSON
-    defaultOptions { sumEncoding = UntaggedValue
-                   , fieldLabelModifier =
-                       \name -> case name of
-                                  "rtype" -> "type"
-                                  _ -> name }
-
-
-data Ack = FileAck Text
-         | MsgAck Text
-         deriving (Eq, Show, Generic)
-
-instance ToJSON Ack where
-  toJSON = genericToJSON
-    defaultOptions { sumEncoding = ObjectWithSingleField
-                   , constructorTagModifier = camelTo2 '_'}
-
-instance FromJSON Ack where
-  parseJSON = genericParseJSON
-    defaultOptions { sumEncoding = ObjectWithSingleField
-                   , constructorTagModifier = camelTo2 '_'}
-
-data Ability = Ability { atype :: AbilityV1 }
-  deriving (Eq, Show, Generic)
-
-instance ToJSON Ability where
-  toJSON = genericToJSON
-    defaultOptions { sumEncoding = UntaggedValue
-                   , fieldLabelModifier = const "type" }
-
-instance FromJSON Ability where
-  parseJSON = genericParseJSON
-    defaultOptions { sumEncoding = UntaggedValue
-                   , fieldLabelModifier = const "type" }
-
-data Response = Error Text
-              | Answer Ack
-              | Transit { abilitiesV1 :: [Ability]
-                        , hintsV1 :: [ConnectionHint] }
-              deriving (Eq, Show, Generic)
-
-instance ToJSON Response where
-  toJSON = genericToJSON
-    defaultOptions { sumEncoding = ObjectWithSingleField
-                   , constructorTagModifier = camelTo2 '-'
-                   , fieldLabelModifier = camelTo2 '-' }
-instance FromJSON Response where
-  parseJSON = genericParseJSON
-    defaultOptions { sumEncoding = ObjectWithSingleField
-                   , constructorTagModifier = camelTo2 '-'
-                   , fieldLabelModifier = camelTo2 '-'}
 
 type Password = ByteString
 
-allocateTcpPort :: IO PortNumber
-allocateTcpPort = E.bracket setup close socketPort
-  where setup = do
-          let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-          addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show defaultPort))
-          sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-          _ <- setSocketOption sock ReuseAddr 1
-          _ <- bind sock (addrAddress addr)
-          return sock
 
 getFileSize :: FilePath -> IO FileOffset
 getFileSize file = fileSize <$> getFileStatus file

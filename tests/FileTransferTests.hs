@@ -5,15 +5,13 @@ where
 
 import Protolude
 
-import FileTransfer
+import FileTransfer.Internal.Protocol
 
 import Test.Hspec
 import Test.QuickCheck
 import Data.Aeson
   ( encode
   , decode
---  , ToJSON(..)
---  , FromJSON(..)
   )
 
 tests :: IO ()

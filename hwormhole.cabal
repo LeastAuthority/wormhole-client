@@ -19,6 +19,8 @@ data-files:          wordlist.txt
 executable hwormhole
   main-is:             Main.hs
   other-modules:       Paths_hwormhole
+                     , FileTransfer.Internal.Network
+                     , FileTransfer.Internal.Protocol
                      , FileTransfer
                      , Helper
   -- other-extensions:    
@@ -65,7 +67,7 @@ test-suite hwormhole-tests
                      , hspec
                      , unordered-containers
                      , QuickCheck
-  other-modules: FileTransfer
+  other-modules: FileTransfer.Internal.Protocol
                , Helper
                , FileTransferTests
   default-language: Haskell2010
