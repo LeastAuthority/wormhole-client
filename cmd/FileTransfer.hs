@@ -9,7 +9,6 @@ module FileTransfer
   , Hint(..)
   , ConnectionHint(..)
   , Transit(..)
-  , abilities'
   )
 where
 
@@ -150,18 +149,20 @@ instance ToJSON Transit where
   toJSON (Transit as hs) = object [ "transit" .= object [ "abilities-v1" .= map (\x -> object [ "type" .= toJSON x ]) as
                                                         , "hints-v1" .= toJSON hs ] ]
 
-abilities' :: Value -> Parser [Ability]
-abilities' = withArray "array of key objects" $ \arr ->
-               mapM (withObject "obj" $ \o -> o .: "type") (V.toList arr)
-
 instance FromJSON Transit where
   parseJSON = withObject "Transit" $ \o ->
     o .: "transit" >>=
     (\x -> do
-        --av <- x .: "abilities-v1"
-        let --vs = abilities' av
+        av <- x .: "abilities-v1"
+        let vs = abilities' av
             hs = x .: "hints-v1"
-        Transit <$> (return []) <*> hs)
+        Transit <$> vs <*> hs)
+    where
+      abilities' :: Value -> Parser [Ability]
+      abilities' = withArray "array of key objects"
+        $ \arr -> mapM (withObject "obj" $ \o -> o .: "type") (V.toList arr)
+
+
 
 type Password = ByteString
 
