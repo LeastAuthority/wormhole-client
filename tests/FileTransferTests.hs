@@ -72,7 +72,7 @@ tests = hspec $ do
                                                  , hints = [h1] })
 
     it "encode and decode Transit type" $ do
-      let t1 = Transit { abilitiesV1 = [DirectTcpV1, RelayV1]
+      let t1 = Transit { abilitiesV1 = [Ability DirectTcpV1, Ability RelayV1]
                        , hintsV1 = [ch1, ch2] }
           h1 = Hint { ctype = DirectTcpV1
                     , priority = 0.5
@@ -96,7 +96,7 @@ tests = hspec $ do
                     , port = 4001 }
           ch4 = Relay { rtype = RelayV1
                       , hints = [h4] }
-          t2 = Transit { abilitiesV1 = [DirectTcpV1,RelayV1]
+          t2 = Transit { abilitiesV1 = [Ability DirectTcpV1, Ability RelayV1]
                        , hintsV1 = [ch3 ,ch4] }
           t1text = "{\"transit\":{\"hints-v1\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234},{\"hints\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}],\"type\":\"relay-v1\"}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"},{\"type\":\"relay-v1\"}]}}" :: Text
           t2text = "{\"transit\": {\"abilities-v1\": [{\"type\": \"direct-tcp-v1\"}, {\"type\": \"relay-v1\"}], \"hints-v1\": [{\"priority\": 0.0, \"hostname\": \"192.168.1.106\", \"type\": \"direct-tcp-v1\", \"port\": 36097}, {\"type\": \"relay-v1\", \"hints\": [{\"priority\": 0.0, \"hostname\": \"transit.magic-wormhole.io\", \"type\": \"direct-tcp-v1\", \"port\": 4001}]}]}}" :: ByteString
@@ -104,8 +104,18 @@ tests = hspec $ do
       decode (encode t1) `shouldBe` (Just t1)
       decode (toS t2text) `shouldBe` Just t2
 
+  describe "Ack message tests" $ do
+    it "encode and decode FileAck responses" $ do
+      let f1 = FileAck "ok"
+      encode f1 `shouldBe` "{\"file_ack\":\"ok\"}"
+      decode (encode f1) `shouldBe` Just f1
+
   describe "Response message tests" $ do
     it "encode and decode Error response" $ do
       let r1 = Error "transfer rejected"
       encode r1 `shouldBe` "{\"error\":\"transfer rejected\"}"
       decode (encode r1) `shouldBe` Just r1
+    it "encode and decode answer response" $ do
+      let a1 = Answer (FileAck "ok")
+      encode a1 `shouldBe` "{\"answer\":{\"file_ack\":\"ok\"}}"
+      decode (encode a1) `shouldBe` Just a1

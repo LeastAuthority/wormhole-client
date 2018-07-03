@@ -6,10 +6,12 @@ module FileTransfer
     sendFile
   -- for tests
   , Ability(..)
+  , AbilityV1(..)
   , Hint(..)
   , ConnectionHint(..)
-  , Transit(..)
+--  , Transit(..)
   , Response(..)
+  , Ack(..)
   )
 where
 
@@ -85,20 +87,20 @@ import qualified MagicWormhole
 
 import Helper
 
-data Ability
+data AbilityV1
   = DirectTcpV1
   | RelayV1
   deriving (Eq, Show, Generic)
 
-instance ToJSON Ability where
+instance ToJSON AbilityV1 where
   toJSON = genericToJSON
     defaultOptions { constructorTagModifier = camelTo2 '-'}
 
-instance FromJSON Ability where
+instance FromJSON AbilityV1 where
   parseJSON = genericParseJSON
     defaultOptions { constructorTagModifier = camelTo2 '-'}
 
-data Hint = Hint { ctype :: Ability
+data Hint = Hint { ctype :: AbilityV1
                  , priority :: Double
                  , hostname :: Text
                  , port :: Word16 }
@@ -121,7 +123,7 @@ instance FromJSON Hint where
 data ConnectionHint
   = Direct Hint
   | Tor Hint
-  | Relay { rtype :: Ability
+  | Relay { rtype :: AbilityV1
           , hints :: [Hint] }
   deriving (Eq, Show, Generic)
 
@@ -141,52 +143,49 @@ instance FromJSON ConnectionHint where
                                   _ -> name }
 
 
-data Transit
-  = Transit { abilitiesV1 :: [Ability]
-            , hintsV1 :: [ConnectionHint] }
-  deriving (Eq, Show)
-
-instance ToJSON Transit where
-  toJSON (Transit as hs) = object [ "transit" .= object [ "abilities-v1" .= map (\x -> object [ "type" .= toJSON x ]) as
-                                                        , "hints-v1" .= toJSON hs ] ]
-
-instance FromJSON Transit where
-  parseJSON = withObject "Transit" $ \o ->
-    o .: "transit" >>=
-    (\x -> do
-        av <- x .: "abilities-v1"
-        let vs = abilities' av
-            hs = x .: "hints-v1"
-        Transit <$> vs <*> hs)
-    where
-      abilities' :: Value -> Parser [Ability]
-      abilities' = withArray "array of key objects"
-        $ \arr -> mapM (withObject "obj" $ \o -> o .: "type") (V.toList arr)
-
-data Ack = FileAck
-         | MsgAck
+data Ack = FileAck Text
+         | MsgAck Text
          deriving (Eq, Show, Generic)
 
 instance ToJSON Ack where
   toJSON = genericToJSON
-    defaultOptions { constructorTagModifier = camelTo2 '-'}
+    defaultOptions { sumEncoding = ObjectWithSingleField
+                   , constructorTagModifier = camelTo2 '_'}
 
 instance FromJSON Ack where
   parseJSON = genericParseJSON
-    defaultOptions { constructorTagModifier = camelTo2 '-'}
+    defaultOptions { sumEncoding = ObjectWithSingleField
+                   , constructorTagModifier = camelTo2 '_'}
+
+data Ability = Ability { atype :: AbilityV1 }
+  deriving (Eq, Show, Generic)
+
+instance ToJSON Ability where
+  toJSON = genericToJSON
+    defaultOptions { sumEncoding = UntaggedValue
+                   , fieldLabelModifier = const "type" }
+
+instance FromJSON Ability where
+  parseJSON = genericParseJSON
+    defaultOptions { sumEncoding = UntaggedValue
+                   , fieldLabelModifier = const "type" }
 
 data Response = Error Text
-              | Answer Ack Text
+              | Answer Ack
+              | Transit { abilitiesV1 :: [Ability]
+                        , hintsV1 :: [ConnectionHint] }
               deriving (Eq, Show, Generic)
 
 instance ToJSON Response where
   toJSON = genericToJSON
     defaultOptions { sumEncoding = ObjectWithSingleField
-                   , constructorTagModifier = camelTo2 '-'}
+                   , constructorTagModifier = camelTo2 '-'
+                   , fieldLabelModifier = camelTo2 '-' }
 instance FromJSON Response where
   parseJSON = genericParseJSON
     defaultOptions { sumEncoding = ObjectWithSingleField
-                   , constructorTagModifier = camelTo2 '-'}
+                   , constructorTagModifier = camelTo2 '-'
+                   , fieldLabelModifier = camelTo2 '-'}
 
 type Password = ByteString
 
@@ -219,7 +218,7 @@ sendFile session password filepath = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- create abilities
-        let abilities' = [DirectTcpV1]
+        let abilities' = [Ability DirectTcpV1]
         port' <- allocateTcpPort
         let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
         let hints' = [Direct hint]
@@ -230,16 +229,15 @@ sendFile session password filepath = do
         MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
         -- receive the transit from the receiving side
-        MagicWormhole.PlainText ansTransitMsg <- atomically $ MagicWormhole.receiveMessage conn
+        MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
         TIO.putStrLn "message from the peer"
-        TIO.putStrLn (toS ansTransitMsg)
-
-        -- TODO: parse peer's transit message
-        let eitherTransitFromPeer = eitherDecode (show ansTransitMsg)
-        case eitherTransitFromPeer of
-          Left s -> TIO.putStrLn ("unable to decode transit message from peer: " <> toS s)
-          Right transitMsgFromPeer -> do
-            TIO.putStrLn transitMsgFromPeer
+        TIO.putStrLn (toS responseMsg)
+        -- "show" needed to quote the incoming json
+        case (eitherDecode (show responseMsg)) of
+          Left s -> TIO.putStrLn "unable to decode the response to transit msg"
+          Right (Error errstr) -> TIO.putStrLn ("error msg from peer: " <> errstr)
+          Right t@(Transit abilities' hints') -> do
+            TIO.putStrLn (show t)
 
             -- send file offer message
             fileSize <- getFileSize filepath
