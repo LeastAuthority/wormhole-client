@@ -9,6 +9,7 @@ module FileTransfer
   , Hint(..)
   , ConnectionHint(..)
   , Transit(..)
+  , Response(..)
   )
 where
 
@@ -162,7 +163,30 @@ instance FromJSON Transit where
       abilities' = withArray "array of key objects"
         $ \arr -> mapM (withObject "obj" $ \o -> o .: "type") (V.toList arr)
 
+data Ack = FileAck
+         | MsgAck
+         deriving (Eq, Show, Generic)
 
+instance ToJSON Ack where
+  toJSON = genericToJSON
+    defaultOptions { constructorTagModifier = camelTo2 '-'}
+
+instance FromJSON Ack where
+  parseJSON = genericParseJSON
+    defaultOptions { constructorTagModifier = camelTo2 '-'}
+
+data Response = Error Text
+              | Answer Ack Text
+              deriving (Eq, Show, Generic)
+
+instance ToJSON Response where
+  toJSON = genericToJSON
+    defaultOptions { sumEncoding = ObjectWithSingleField
+                   , constructorTagModifier = camelTo2 '-'}
+instance FromJSON Response where
+  parseJSON = genericParseJSON
+    defaultOptions { sumEncoding = ObjectWithSingleField
+                   , constructorTagModifier = camelTo2 '-'}
 
 type Password = ByteString
 

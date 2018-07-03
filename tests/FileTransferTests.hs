@@ -104,3 +104,8 @@ tests = hspec $ do
       decode (encode t1) `shouldBe` (Just t1)
       decode (toS t2text) `shouldBe` Just t2
 
+  describe "Response message tests" $ do
+    it "encode and decode Error response" $ do
+      let r1 = Error "transfer rejected"
+      encode r1 `shouldBe` "{\"error\":\"transfer rejected\"}"
+      decode (encode r1) `shouldBe` Just r1
