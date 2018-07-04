@@ -31,7 +31,10 @@ executable hwormhole
                      , network
                      , optparse-applicative
                      , protolude
+                     , hex
                      , random
+                     , saltine
+                     , cryptonite
                      , scientific
                      , spake2 >= 0.4
                      , text

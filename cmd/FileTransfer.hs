@@ -12,7 +12,12 @@ import Protolude
 
 import qualified Data.Text.IO as TIO
 import qualified Crypto.Spake2 as Spake2
-
+import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import qualified Crypto.Saltine.Class as Saltine
+import qualified Crypto.KDF.HKDF as HKDF
+import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
+import Crypto.Hash (SHA256(..), hashWith)
+import Data.Hex (hex)
 
 import System.Posix.Files
   ( getFileStatus
@@ -102,33 +107,40 @@ sendFile session appid password filepath = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- exchange abilities
-        responseMsg <- transitExchange conn
-
-        case (eitherDecode (toS responseMsg)) of
-          Left s -> TIO.putStrLn ("unable to decode the response to transit msg: " <> (toS s))
-          Right (Error errstr) -> TIO.putStrLn ("error msg from peer: " <> errstr)
-          Right t@(Transit abilities' hints') -> do
-            TIO.putStrLn (show t)
-
-            -- send file offer message
-            rxFileOffer <- offerExchange conn filepath
-
-            -- receive file ack message {"answer": {"file_ack": "ok"}}
-            -- TODO: verify that file_ack is "ok"
-            TIO.putStrLn (toS rxFileOffer)
-            case (eitherDecode (toS rxFileOffer)) of
-              Left s -> TIO.putStrLn ("error in the offer response from the peer: " <> (toS s))
-              Right (Answer (FileAck msg)) | msg == "ok" ->
-                                             -- start transit TCP connection and message exchange
-                                             runTransitProtocol abilities' hints'
-                                           | otherwise -> panic "Did not get file ack. Exiting"
-              Right (Error errstr) -> panic ("error: " <> (toS errstr))
+        transitResp <- transitExchange conn
+        case transitResp of
+          Left s -> panic s
+          Right (Transit abilities' hints') -> do
+            -- send offer for the file
+            offerResp <- offerExchange conn filepath
+            case offerResp of
+              Left s -> panic s
+              Right _ -> do
+                -- derive key
+                let sessionKey = MagicWormhole.sharedKey conn
+                let purpose = transitPurpose appid
+                let transitKey = MagicWormhole.deriveKey sessionKey purpose
+                runTransitProtocol transitKey abilities' hints'
+          Right _ -> panic "error sending transit message"
     )
 
-runTransitProtocol :: [Ability] -> [ConnectionHint] -> IO ()
-runTransitProtocol = undefined
+makeSenderHandshake :: MagicWormhole.SessionKey -> ByteString
+makeSenderHandshake (MagicWormhole.SessionKey key) =
+    let hexid = (HKDF.expand (HKDF.extract salt key :: HKDF.PRK SHA256) purpose keySize)
+        salt = "" :: ByteString
+        keySize = ByteSizes.secretBoxKey
+        purpose = toS @Text @ByteString "transit_sender"
+    in
+      (toS @Text @ByteString "transit sender ") <> (hex hexid) <> (toS @Text @ByteString " ready\n")
 
---   -- * establish the tcp connection with the peer/relay
+runTransitProtocol :: SecretBox.Key -> [Ability] -> [ConnectionHint] -> IO ()
+runTransitProtocol key as hs = do
+  -- * establish the tcp connection with the peer/relay
+  --  for each (hostname, port) pair in direct hints, try to establish
+  --  a connection.
+  let sHandshakeMsg = makeSenderHandshake (MagicWormhole.SessionKey (Saltine.encode key))
+  TIO.putStrLn (toS sHandshakeMsg)
+
 --   -- * send handshake message:
 --   --     sender -> receiver: transit sender TXID_HEX ready\n\n
 --   --     receiver -> sender: transit receiver RXID_HEX ready\n\n
