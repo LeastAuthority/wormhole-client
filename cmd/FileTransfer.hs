@@ -4,14 +4,6 @@
 module FileTransfer
   (
     sendFile
-  -- for tests
-  , Ability(..)
-  , AbilityV1(..)
-  , Hint(..)
-  , ConnectionHint(..)
---  , Transit(..)
-  , Response(..)
-  , Ack(..)
   )
 where
 
@@ -39,7 +31,6 @@ import FileTransfer.Internal.Protocol
 
 import Helper
 
-
 type Password = ByteString
 
 
@@ -48,6 +39,44 @@ getFileSize file = fileSize <$> getFileStatus file
 
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
+
+transitExchange :: MagicWormhole.EncryptedConnection -> IO ByteString
+transitExchange conn = do
+  (_, rxMsg) <- concurrently sendTransitMsg receiveTransitMsg
+  return rxMsg
+    where
+      sendTransitMsg = do
+        -- create abilities
+        let abilities' = [Ability DirectTcpV1]
+        port' <- allocateTcpPort
+        let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
+        let hints' = [Direct hint]
+
+        -- create transit message
+        let txTransitMsg = Transit abilities' hints'
+        let encodedTransitMsg = toS (encode txTransitMsg)
+
+        -- send the transit message (dictionary with key as "transit" and value as abilities)
+        MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
+      receiveTransitMsg = do
+        -- receive the transit from the receiving side
+        MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
+        return responseMsg
+
+offerExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO ByteString
+offerExchange conn path = do
+  (_,rx) <- concurrently sendOffer receiveResponse
+  return rx
+    where
+      sendOffer :: IO ()
+      sendOffer = do
+        size <- getFileSize path
+        let fileOffer = MagicWormhole.File (toS path) size
+        MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
+      receiveResponse :: IO ByteString
+      receiveResponse = do
+        MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
+        return rxFileOffer
 
 sendFile :: MagicWormhole.Session -> Password -> FilePath -> IO () -- Response
 sendFile session password filepath = do
@@ -61,43 +90,32 @@ sendFile session password filepath = do
   printSendHelpText $ toS n <> "-" <> toS password
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
-        -- create abilities
-        let abilities' = [Ability DirectTcpV1]
-        port' <- allocateTcpPort
-        let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
-        let hints' = [Direct hint]
-        -- create transit message
-        let txTransitMsg = Transit abilities' hints'
-        let encodedTransitMsg = toS (encode txTransitMsg)
-        -- send the transit message (dictionary with key as "transit" and value as abilities)
-        MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
+        -- exchange abilities
+        responseMsg <- transitExchange conn
 
-        -- receive the transit from the receiving side
-        MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
         case (eitherDecode (toS responseMsg)) of
           Left s -> TIO.putStrLn ("unable to decode the response to transit msg: " <> (toS s))
           Right (Error errstr) -> TIO.putStrLn ("error msg from peer: " <> errstr)
           Right t@(Transit abilities' hints') -> do
-            TIO.putStrLn "got a transit message as a response"
             TIO.putStrLn (show t)
 
             -- send file offer message
-            fileSize <- getFileSize filepath
-            let fileOffer = MagicWormhole.File (toS filepath) fileSize
-            MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
+            rxFileOffer <- offerExchange conn filepath
 
             -- receive file ack message {"answer": {"file_ack": "ok"}}
             -- TODO: verify that file_ack is "ok"
-            MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
             TIO.putStrLn (toS rxFileOffer)
-
-            -- TODO: parse offer message from the peer
-
-            -- we are now ready to prepare for the TCP communication
-            -- TODO derive a transit key
-
-            return ()
+            case (eitherDecode (toS rxFileOffer)) of
+              Left s -> TIO.putStrLn ("error in the offer response from the peer: " <> (toS s))
+              Right (Answer (FileAck msg)) | msg == "ok" ->
+                                             -- start transit TCP connection and message exchange
+                                             runTransitProtocol abilities' hints'
+                                           | otherwise -> panic "Did not get file ack. Exiting"
+              Right (Error errstr) -> panic ("error: " <> (toS errstr))
     )
+
+runTransitProtocol :: [Ability] -> [ConnectionHint] -> IO ()
+runTransitProtocol = undefined
 
 --   -- * establish the tcp connection with the peer/relay
 --   -- * send handshake message:
