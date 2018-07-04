@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module FileTransfer.Internal.Protocol
-  ( Response(..)
+  ( TransitMsg(..)
   , Ability(..)
   , AbilityV1(..)
   , Hint(..)
@@ -107,18 +107,18 @@ instance FromJSON Ability where
     defaultOptions { sumEncoding = UntaggedValue
                    , fieldLabelModifier = const "type" }
 
-data Response = Error Text
-              | Answer Ack
-              | Transit { abilitiesV1 :: [Ability]
-                        , hintsV1 :: [ConnectionHint] }
-              deriving (Eq, Show, Generic)
+data TransitMsg = Error Text
+                | Answer Ack
+                | Transit { abilitiesV1 :: [Ability]
+                          , hintsV1 :: [ConnectionHint] }
+                deriving (Eq, Show, Generic)
 
-instance ToJSON Response where
+instance ToJSON TransitMsg where
   toJSON = genericToJSON
     defaultOptions { sumEncoding = ObjectWithSingleField
                    , constructorTagModifier = camelTo2 '-'
                    , fieldLabelModifier = camelTo2 '-' }
-instance FromJSON Response where
+instance FromJSON TransitMsg where
   parseJSON = genericParseJSON
     defaultOptions { sumEncoding = ObjectWithSingleField
                    , constructorTagModifier = camelTo2 '-'
