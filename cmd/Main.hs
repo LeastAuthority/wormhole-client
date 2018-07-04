@@ -179,7 +179,7 @@ main = do
         TFileOrDir filename -> do
           -- file or dir
           password <- allocatePassword wordList
-          sendFile session (toS password) filename
+          sendFile session appID (toS password) filename
           -- TIO.putStrLn "file or directory transfers not supported yet"
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
       case maybeCode of

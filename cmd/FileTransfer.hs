@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings #-}
 module FileTransfer
   (
     sendFile
@@ -40,46 +41,56 @@ getFileSize file = fileSize <$> getFileStatus file
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 
-transitExchange :: MagicWormhole.EncryptedConnection -> IO ByteString
+transitExchange :: MagicWormhole.EncryptedConnection -> IO (Either Text TransitMsg)
 transitExchange conn = do
   (_, rxMsg) <- concurrently sendTransitMsg receiveTransitMsg
-  return rxMsg
-    where
-      sendTransitMsg = do
-        -- create abilities
-        let abilities' = [Ability DirectTcpV1]
-        port' <- allocateTcpPort
-        let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
-        let hints' = [Direct hint]
+  case eitherDecode (toS rxMsg) of
+    Right t@(Transit as hs) -> return (Right t)
+    Left s -> return (Left (toS s))
+    Right (Error errstr) -> return (Left errstr)
+  where
+    sendTransitMsg = do
+      -- create abilities
+      let abilities' = [Ability DirectTcpV1]
+      port' <- allocateTcpPort
+      let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
+      let hints' = [Direct hint]
 
-        -- create transit message
-        let txTransitMsg = Transit abilities' hints'
-        let encodedTransitMsg = toS (encode txTransitMsg)
+      -- create transit message
+      let txTransitMsg = Transit abilities' hints'
+      let encodedTransitMsg = toS (encode txTransitMsg)
 
-        -- send the transit message (dictionary with key as "transit" and value as abilities)
-        MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
-      receiveTransitMsg = do
-        -- receive the transit from the receiving side
-        MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
-        return responseMsg
+      -- send the transit message (dictionary with key as "transit" and value as abilities)
+      MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
+    receiveTransitMsg = do
+      -- receive the transit from the receiving side
+      MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
+      return responseMsg
 
-offerExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO ByteString
+offerExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
 offerExchange conn path = do
   (_,rx) <- concurrently sendOffer receiveResponse
-  return rx
-    where
-      sendOffer :: IO ()
-      sendOffer = do
-        size <- getFileSize path
-        let fileOffer = MagicWormhole.File (toS path) size
-        MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
-      receiveResponse :: IO ByteString
-      receiveResponse = do
-        MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
-        return rxFileOffer
+  -- receive file ack message {"answer": {"file_ack": "ok"}}
+  case eitherDecode (toS rx) of
+    Left s -> return $ Left (toS s)
+    Right (Error errstr) -> return $ Left (toS errstr)
+    Right (Answer (FileAck msg)) | msg == "ok" -> return (Right ())
+                                 | otherwise -> return $ Left "Did not get file ack. Exiting"
+    Right (Answer (MsgAck _)) -> return $ Left "expected file ack, got message ack instead"
+    Right (Transit _ _) -> return $ Left "unexpected transit message"
+  where
+    sendOffer :: IO ()
+    sendOffer = do
+      size <- getFileSize path
+      let fileOffer = MagicWormhole.File (toS path) size
+      MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
+    receiveResponse :: IO ByteString
+    receiveResponse = do
+      MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
+      return rxFileOffer
 
-sendFile :: MagicWormhole.Session -> Password -> FilePath -> IO () -- Response
-sendFile session password filepath = do
+sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
+sendFile session appid password filepath = do
 --   -- steps
 --   -- * first establish a wormhole session with the receiver and
 --   --   then talk the filetransfer protocol over it as follows.
