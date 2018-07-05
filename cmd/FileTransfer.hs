@@ -9,10 +9,7 @@ where
 
 import Protolude
 
-import qualified Data.Text.IO as TIO
 import qualified Crypto.Spake2 as Spake2
-import qualified Crypto.Saltine.Core.SecretBox as SecretBox
-import qualified Crypto.Saltine.Class as Saltine
 
 import System.Posix.Files
   ( getFileStatus
@@ -119,27 +116,4 @@ sendFile session appid password filepath = do
                 runTransitProtocol transitKey abilities' hints'
           Right _ -> panic "error sending transit message"
     )
-
-runTransitProtocol :: SecretBox.Key -> [Ability] -> [ConnectionHint] -> IO ()
-runTransitProtocol key as hs = do
-  -- * establish the tcp connection with the peer/relay
-  --  for each (hostname, port) pair in direct hints, try to establish
-  --  a connection.
-  let sHandshakeMsg = makeSenderHandshake (MagicWormhole.SessionKey (Saltine.encode key))
-  TIO.putStrLn (toS sHandshakeMsg)
-
---   -- * send handshake message:
---   --     sender -> receiver: transit sender TXID_HEX ready\n\n
---   --     receiver -> sender: transit receiver RXID_HEX ready\n\n
---   -- * if sender is satisfied with the handshake, it sends
---   --     sender -> receiver: go\n
---   -- * TXID_HEX above is the HKDF(transit_key, 32, CTXinfo=b'transit_sender') for sender
---   --    and HKDF(transit_key, 32, CTXinfo=b'transit_receiver')
---   -- * TODO: relay handshake
---   -- * create record_keys (send_record_key and receive_record_key (secretboxes)
---   -- * send the file (40 byte chunks) over a direct connection to either the relay or peer.
---   -- * receiver, once it successfully received the file, sends "{ 'ack' : 'ok', 'sha256': HEXHEX }
-  
-  
--- receiveFile :: Session -> Passcode -> IO Status
 
