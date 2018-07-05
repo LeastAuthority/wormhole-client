@@ -3,8 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FileTransfer
-  (
-    sendFile
+  ( sendFile
   )
 where
 
@@ -14,10 +13,6 @@ import qualified Data.Text.IO as TIO
 import qualified Crypto.Spake2 as Spake2
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
-import qualified Crypto.KDF.HKDF as HKDF
-import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
-import Crypto.Hash (SHA256(..), hashWith)
-import Data.Hex (hex)
 
 import System.Posix.Files
   ( getFileStatus
@@ -34,6 +29,7 @@ import Data.Aeson
 import qualified MagicWormhole
 import FileTransfer.Internal.Network
 import FileTransfer.Internal.Protocol
+import FileTransfer.Internal.Messages
 
 import Helper
 
@@ -123,15 +119,6 @@ sendFile session appid password filepath = do
                 runTransitProtocol transitKey abilities' hints'
           Right _ -> panic "error sending transit message"
     )
-
-makeSenderHandshake :: MagicWormhole.SessionKey -> ByteString
-makeSenderHandshake (MagicWormhole.SessionKey key) =
-    let hexid = (HKDF.expand (HKDF.extract salt key :: HKDF.PRK SHA256) purpose keySize)
-        salt = "" :: ByteString
-        keySize = ByteSizes.secretBoxKey
-        purpose = toS @Text @ByteString "transit_sender"
-    in
-      (toS @Text @ByteString "transit sender ") <> (hex hexid) <> (toS @Text @ByteString " ready\n")
 
 runTransitProtocol :: SecretBox.Key -> [Ability] -> [ConnectionHint] -> IO ()
 runTransitProtocol key as hs = do

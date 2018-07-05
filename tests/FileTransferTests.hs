@@ -8,7 +8,6 @@ import Protolude
 import FileTransfer.Internal.Protocol
 
 import Test.Hspec
-import Test.QuickCheck
 import Data.Aeson
   ( encode
   , decode
@@ -117,3 +116,4 @@ tests = hspec $ do
       let a1 = Answer (FileAck "ok")
       encode a1 `shouldBe` "{\"answer\":{\"file_ack\":\"ok\"}}"
       decode (encode a1) `shouldBe` Just a1
+      
