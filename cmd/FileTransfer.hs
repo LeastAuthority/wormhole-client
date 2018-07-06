@@ -22,6 +22,11 @@ import Data.Aeson
   ( encode
   , eitherDecode
   )
+import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import qualified Crypto.Saltine.Class as Saltine
+import qualified Data.Text.IO as TIO
+import qualified Data.ByteString as BS
+import Data.Text (toLower)
 
 import qualified MagicWormhole
 import FileTransfer.Internal.Network
@@ -31,7 +36,6 @@ import FileTransfer.Internal.Messages
 import Helper
 
 type Password = ByteString
-
 
 getFileSize :: FilePath -> IO FileOffset
 getFileSize file = fileSize <$> getFileStatus file
@@ -51,8 +55,7 @@ transitExchange conn = do
       -- create abilities
       let abilities' = [Ability DirectTcpV1]
       port' <- allocateTcpPort
-      let hint = Hint DirectTcpV1 0.0 "127.0.0.1" (fromIntegral (toInteger port'))
-      let hints' = [Direct hint]
+      hints' <- buildDirectHints
 
       -- create transit message
       let txTransitMsg = Transit abilities' hints'
@@ -87,6 +90,26 @@ offerExchange conn path = do
       MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
       return rxFileOffer
 
+handshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
+handshakeExchange ep key = do
+  (s, r) <- concurrently sendHandshake rxHandshake
+  if toS r == toLower (toS rHandshakeMsg)
+    then do
+    TIO.putStrLn (toS r)
+    TIO.putStrLn "go"
+    _ <- sendGo
+    return ()
+    else do
+    _ <- sendNeverMind
+    return ()
+      where
+        sendHandshake = sendBuffer ep sHandshakeMsg
+        rxHandshake = recvBuffer ep (BS.length rHandshakeMsg)
+        sendGo = sendBuffer ep (toS @Text @ByteString "go\n")
+        sendNeverMind = sendBuffer ep (toS @Text @ByteString "nevermind\n")
+        sHandshakeMsg = makeSenderHandshake (MagicWormhole.SessionKey (Saltine.encode key))
+        rHandshakeMsg = makeReceiverHandshake (MagicWormhole.SessionKey (Saltine.encode key))
+
 sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
 sendFile session appid password filepath = do
 --   -- steps
@@ -103,16 +126,23 @@ sendFile session appid password filepath = do
         transitResp <- transitExchange conn
         case transitResp of
           Left s -> panic s
-          Right (Transit abilities' hints') -> do
+          Right (Transit peerAbilities peerHints) -> do
             -- send offer for the file
             offerResp <- offerExchange conn filepath
             case offerResp of
               Left s -> panic s
               Right _ -> do
-                -- derive key
-                let sessionKey = MagicWormhole.sharedKey conn
-                let transitKey = MagicWormhole.deriveKey sessionKey (transitPurpose appid)
-                runTransitProtocol transitKey abilities' hints'
+                runTransitProtocol peerAbilities peerHints
+                  (\session -> do
+                     -- 0. derive transit key
+                     let sessionKey = MagicWormhole.sharedKey conn
+                         transitKey = MagicWormhole.deriveKey sessionKey (transitPurpose appid)
+                     handshakeExchange session transitKey
+                     -- 1. handshakeExchange
+                     -- 2. create record keys
+                     -- 3. send encrypted chunks of N bytes to the peer
+                     return ()
+                     )
           Right _ -> panic "error sending transit message"
     )
 
