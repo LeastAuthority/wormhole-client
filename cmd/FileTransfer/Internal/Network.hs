@@ -98,19 +98,24 @@ data TCPEndpoint
   } deriving (Show, Eq)
 
 tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ hostname portnum)) =
+tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
-  let port = PortNumber (fromIntegral portnum)
-  addr <- resolve (toS hostname) (show portnum)
-  socket <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  addr <- resolve (toS host) (show portnum)
+  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   timeout 10000000 (do
-                       connect socket $ addrAddress addr
-                       return $ TCPEndpoint h a socket)
+                       connect sock' $ addrAddress addr
+                       return $ TCPEndpoint h a sock')
   where
-    resolve host port = do
-      let hints = defaultHints { addrSocketType = Stream }
-      addr:_ <- getAddrInfo (Just hints) (Just host) (Just port)
+    resolve host' port' = do
+      let hints' = defaultHints { addrSocketType = Stream }
+      addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
+tryToConnect (Ability DirectTcpV1) _ = do
+  TIO.putStrLn "Tor hints and Relays are not supported yet"
+  return Nothing
+tryToConnect (Ability RelayV1) _ = do
+  TIO.putStrLn "Relays are not supported yet"
+  return Nothing
 
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
 sendBuffer ep = send (sock ep)
