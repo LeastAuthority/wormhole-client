@@ -42,6 +42,7 @@ executable hwormhole
                      , unix
                      , vector
                      , unordered-containers
+                     , network-info
   hs-source-dirs:      cmd
   default-language:    Haskell2010
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
