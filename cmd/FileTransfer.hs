@@ -111,8 +111,7 @@ sendFile session appid password filepath = do
               Right _ -> do
                 -- derive key
                 let sessionKey = MagicWormhole.sharedKey conn
-                let purpose = transitPurpose appid
-                let transitKey = MagicWormhole.deriveKey sessionKey purpose
+                let transitKey = MagicWormhole.deriveKey sessionKey (transitPurpose appid)
                 runTransitProtocol transitKey abilities' hints'
           Right _ -> panic "error sending transit message"
     )
