@@ -133,11 +133,11 @@ sendFile session appid password filepath = do
               Left s -> panic s
               Right _ -> do
                 runTransitProtocol peerAbilities peerHints
-                  (\session -> do
+                  (\endpoint -> do
                      -- 0. derive transit key
                      let sessionKey = MagicWormhole.sharedKey conn
                          transitKey = MagicWormhole.deriveKey sessionKey (transitPurpose appid)
-                     handshakeExchange session transitKey
+                     handshakeExchange endpoint transitKey
                      -- 1. handshakeExchange
                      -- 2. create record keys
                      -- 3. send encrypted chunks of N bytes to the peer

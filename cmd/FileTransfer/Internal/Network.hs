@@ -11,7 +11,6 @@ module FileTransfer.Internal.Network
 import Protolude
 
 import FileTransfer.Internal.Protocol
-import FileTransfer.Internal.Messages
 
 import Network.Socket
   ( addrSocketType
@@ -62,10 +61,10 @@ allocateTcpPort = E.bracket setup close socketPort
   where setup = do
           let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
           addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show defaultPort))
-          sock <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-          _ <- setSocketOption sock ReuseAddr 1
-          _ <- bind sock (addrAddress addr)
-          return sock
+          sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+          _ <- setSocketOption sock' ReuseAddr 1
+          _ <- bind sock' (addrAddress addr)
+          return sock'
 
 type Hostname = Text
 
@@ -75,7 +74,7 @@ ipv4ToHostname ip =
       (q2, r2) = q1 `divMod` 256
       (q3, r3) = q2 `divMod` 256
   in
-    (show r1) <> "." <> (show r2) <> "." <> (show r3) <> "." <> (show q3)
+    show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
 
 buildDirectHints :: IO [ConnectionHint]
 buildDirectHints = do
@@ -85,15 +84,15 @@ buildDirectHints = do
         filter (\nwInterface -> let (IPv4 addr4) = ipv4 nwInterface in addr4 /= 0x0100007f) nwInterfaces
   return $ map (\nwInterface ->
                   let (IPv4 addr4) = ipv4 nwInterface in
-                  Direct (Hint { hostname = ipv4ToHostname addr4
-                               , port = portnum
-                               , priority = 0
-                               , ctype = DirectTcpV1 })) nonLoopbackInterfaces
+                  Direct Hint { hostname = ipv4ToHostname addr4
+                              , port = portnum
+                              , priority = 0
+                              , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
 
 data TCPEndpoint
   = TCPEndpoint
-  { hint :: ConnectionHint
+  { chint :: ConnectionHint
   , ability :: Ability
   , sock :: Socket
   } deriving (Show, Eq)
@@ -106,7 +105,7 @@ tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ hostname port
   socket <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   timeout 10000000 (do
                        connect socket $ addrAddress addr
-                       return $ (TCPEndpoint h a socket))
+                       return $ TCPEndpoint h a socket)
   where
     resolve host port = do
       let hints = defaultHints { addrSocketType = Stream }
@@ -114,12 +113,10 @@ tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ hostname port
       return addr
 
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
-sendBuffer ep buf = do
-  send (sock ep) buf
+sendBuffer ep = send (sock ep)
 
 recvBuffer :: TCPEndpoint -> Int -> IO ByteString
-recvBuffer ep maxBufSize = do
-  recv (sock ep) maxBufSize
+recvBuffer ep = recv (sock ep)
 
 runTransitProtocol :: [Ability] -> [ConnectionHint] -> (TCPEndpoint -> IO ()) -> IO ()
 runTransitProtocol as hs app = do
