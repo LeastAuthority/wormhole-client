@@ -94,14 +94,10 @@ handshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 handshakeExchange ep key = do
   (s, r) <- concurrently sendHandshake rxHandshake
   if toS r == toLower (toS rHandshakeMsg)
-    then do
-    TIO.putStrLn (toS r)
-    TIO.putStrLn "go"
-    _ <- sendGo
-    return ()
-    else do
-    _ <- sendNeverMind
-    return ()
+    then
+    sendGo >> return ()
+    else
+    sendNeverMind >> return ()
       where
         sendHandshake = sendBuffer ep sHandshakeMsg
         rxHandshake = recvBuffer ep (BS.length rHandshakeMsg)
