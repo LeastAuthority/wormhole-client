@@ -2,6 +2,8 @@
 module FileTransfer.Internal.Messages
   ( makeSenderHandshake
   , makeReceiverHandshake
+  , makeSenderRecordKey
+  , makeReceiverRecordKey
   )
 where
 
@@ -37,3 +39,17 @@ makeReceiverHandshake key =
         hexid' = (toS (toLower (toS @ByteString @Text hexid)))
     in
       (toS @Text @ByteString "transit receiver ") <> hexid' <> (toS @Text @ByteString " ready\n\n")
+
+makeSenderRecordKey :: MagicWormhole.SessionKey -> ByteString
+makeSenderRecordKey key =
+  hkdf salt key purpose
+  where
+    salt = "" :: ByteString
+    purpose = toS @Text @ByteString "transit_record_sender_key"
+
+makeReceiverRecordKey :: MagicWormhole.SessionKey -> ByteString
+makeReceiverRecordKey key =
+  hkdf salt key purpose
+  where
+    salt = "" :: ByteString
+    purpose = toS @Text @ByteString "transit_record_receiver_key"
