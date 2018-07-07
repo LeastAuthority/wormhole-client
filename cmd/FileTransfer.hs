@@ -93,7 +93,7 @@ offerExchange conn path = do
 handshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 handshakeExchange ep key = do
   (s, r) <- concurrently sendHandshake rxHandshake
-  if toS r == toLower (toS rHandshakeMsg)
+  if r == rHandshakeMsg
     then
     sendGo >> return ()
     else
