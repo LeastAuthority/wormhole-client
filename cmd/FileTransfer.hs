@@ -9,8 +9,6 @@ where
 
 import Protolude
 
-import qualified Crypto.Spake2 as Spake2
-
 import System.Posix.Files
   ( getFileStatus
   , fileSize
@@ -24,12 +22,11 @@ import Data.Aeson
   )
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
-import qualified Data.Text.IO as TIO
 import qualified Data.ByteString as BS
 import Data.ByteString.Builder(toLazyByteString, word32BE)
-import Data.Text (toLower)
-
+import qualified Crypto.Spake2 as Spake2
 import qualified MagicWormhole
+
 import FileTransfer.Internal.Network
 import FileTransfer.Internal.Protocol
 import FileTransfer.Internal.Messages
@@ -44,13 +41,17 @@ getFileSize file = fileSize <$> getFileStatus file
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 
+-- |'transitExchange' exchanges transit message with the peer.
+-- Sender sends a transit message with its abilities and hints.
+-- Receiver sends either another Transit message or an Error message.
 transitExchange :: MagicWormhole.EncryptedConnection -> IO (Either Text TransitMsg)
 transitExchange conn = do
   (_, rxMsg) <- concurrently sendTransitMsg receiveTransitMsg
   case eitherDecode (toS rxMsg) of
-    Right t@(Transit as hs) -> return (Right t)
+    Right t@(Transit _ _) -> return (Right t)
     Left s -> return (Left (toS s))
     Right (Error errstr) -> return (Left errstr)
+    Right (Answer _) -> return (Left "Answer message from the peer is unexpected")
   where
     sendTransitMsg = do
       -- create abilities
@@ -116,21 +117,27 @@ encrypt key nonce plaintext =
   in
     nonceBigEndian <> ciphertext
 
+-- | Given the record encryption key and a bytestream, chop
+-- the bytestream into blocks of 4096 bytes, encrypt them and
+-- send it to the given network endpoint. The length of the
+-- encrypted record is sent first, encoded as a4-byte big-endian
+-- number. After that, the encrypted record itself is sent.
 sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
-sendRecords ep key fileBS =
-  forM_ (go Saltine.zero (chunks 4096 fileBS)) sendRecord
+sendRecords ep key fileStream = forM_ records sendRecord
   where
+    records = go Saltine.zero blocks
+    blocks = chop 4096 fileStream
     go :: SecretBox.Nonce -> [ByteString] -> [ByteString]
     go _ [] = []
     go nonce (chunk:restOfFile) =
       let cipherText = encrypt key nonce chunk
       in
         (cipherText): go (Saltine.nudge nonce) restOfFile
-    chunks sz fileBS | fileBS == BS.empty = []
-                     | otherwise =
-                         let (record, records) = BS.splitAt sz fileBS
-                         in
-                           record: chunks sz records
+    chop sz fileBS | fileBS == BS.empty = []
+                   | otherwise =
+                     let (chunk, chunks) = BS.splitAt sz fileBS
+                     in
+                       chunk: chop sz chunks
     sendRecord :: ByteString -> IO ()
     sendRecord record = do
       -- send size of the encrypted payload as 4 bytes, then send record
