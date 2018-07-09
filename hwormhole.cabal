@@ -28,7 +28,6 @@ executable hwormhole
   build-depends:       base >=4.11 && <4.12
                      , bytestring
                      , aeson
-                     , async
                      , haskeline
                      , magic-wormhole
                      , network
@@ -38,12 +37,9 @@ executable hwormhole
                      , random
                      , saltine
                      , cryptonite
-                     , scientific
                      , spake2 >= 0.4
                      , text
                      , unix
-                     , vector
-                     , unordered-containers
                      , network-info
   hs-source-dirs:      cmd
   default-language:    Haskell2010
@@ -66,14 +62,10 @@ test-suite hwormhole-tests
                      , optparse-applicative
                      , protolude
                      , random
-                     , scientific
                      , spake2 >= 0.4
                      , text
                      , unix
-                     , vector
                      , hspec
-                     , unordered-containers
-                     , QuickCheck
                      , saltine
                      , cryptonite
                      , hex
