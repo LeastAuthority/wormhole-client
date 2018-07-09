@@ -13,12 +13,14 @@ import MagicWormhole
 import qualified Crypto.KDF.HKDF as HKDF
 import Crypto.Hash (SHA256(..))
 import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
+import qualified Crypto.Saltine.Class as Saltine
+import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import Data.Hex (hex)
 import Data.Text (toLower)
 
-hkdf :: ByteString -> MagicWormhole.SessionKey -> ByteString -> ByteString
-hkdf salt (MagicWormhole.SessionKey key) purpose =
-  HKDF.expand (HKDF.extract salt key :: HKDF.PRK SHA256) purpose keySize
+hkdf :: ByteString -> SecretBox.Key -> ByteString -> ByteString
+hkdf salt key purpose =
+  HKDF.expand (HKDF.extract salt (Saltine.encode key) :: HKDF.PRK SHA256) purpose keySize
   where
     keySize = ByteSizes.secretBoxKey
 
@@ -29,7 +31,7 @@ data Purpose
   | ReceiverRecord
   deriving (Eq, Show)
 
-deriveKeyFromPurpose :: Purpose -> MagicWormhole.SessionKey -> ByteString
+deriveKeyFromPurpose :: Purpose -> SecretBox.Key -> ByteString
 deriveKeyFromPurpose purpose key =
   hkdf salt key (purposeStr purpose)
   where
@@ -40,7 +42,7 @@ deriveKeyFromPurpose purpose key =
     purposeStr SenderRecord = "transit_record_sender_key"
     purposeStr ReceiverRecord = "transit_record_receiver_key"
 
-makeSenderHandshake :: MagicWormhole.SessionKey -> ByteString
+makeSenderHandshake :: SecretBox.Key -> ByteString
 makeSenderHandshake key =
   (toS @Text @ByteString "transit sender ") <> hexid <> (toS @Text @ByteString " ready\n\n")
   where
@@ -48,15 +50,19 @@ makeSenderHandshake key =
     hexid = (toS (toLower (toS @ByteString @Text (hex subkey))))
 
 
-makeReceiverHandshake :: MagicWormhole.SessionKey -> ByteString
+makeReceiverHandshake :: SecretBox.Key -> ByteString
 makeReceiverHandshake key =
   (toS @Text @ByteString "transit receiver ") <> hexid <> (toS @Text @ByteString " ready\n\n")
   where
     subkey = deriveKeyFromPurpose ReceiverHandshake key
     hexid = (toS (toLower (toS @ByteString @Text (hex subkey))))
 
-makeSenderRecordKey :: MagicWormhole.SessionKey -> ByteString
-makeSenderRecordKey = deriveKeyFromPurpose SenderRecord
+makeSenderRecordKey :: SecretBox.Key -> SecretBox.Key
+makeSenderRecordKey key =
+  fromMaybe (panic "Could not encode to SecretBox key") $
+  Saltine.decode (deriveKeyFromPurpose SenderRecord key)
 
-makeReceiverRecordKey :: MagicWormhole.SessionKey -> ByteString
-makeReceiverRecordKey = deriveKeyFromPurpose ReceiverRecord
+makeReceiverRecordKey :: SecretBox.Key -> SecretBox.Key
+makeReceiverRecordKey key =
+  fromMaybe (panic "Could not encode to SecretBox key") $
+  Saltine.decode (deriveKeyFromPurpose ReceiverRecord key)

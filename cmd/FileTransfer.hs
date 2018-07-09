@@ -26,6 +26,7 @@ import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Data.Text.IO as TIO
 import qualified Data.ByteString as BS
+import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Text (toLower)
 
 import qualified MagicWormhole
@@ -103,8 +104,41 @@ handshakeExchange ep key = do
         rxHandshake = recvBuffer ep (BS.length rHandshakeMsg)
         sendGo = sendBuffer ep (toS @Text @ByteString "go\n")
         sendNeverMind = sendBuffer ep (toS @Text @ByteString "nevermind\n")
-        sHandshakeMsg = makeSenderHandshake (MagicWormhole.SessionKey (Saltine.encode key))
-        rHandshakeMsg = makeReceiverHandshake (MagicWormhole.SessionKey (Saltine.encode key))
+        sHandshakeMsg = makeSenderHandshake key
+        rHandshakeMsg = makeReceiverHandshake key
+
+encrypt :: SecretBox.Key -> SecretBox.Nonce -> ByteString -> ByteString
+encrypt key nonce plaintext =
+  let nonceBigEndian = BS.reverse $ Saltine.encode nonce
+      newNonce = fromMaybe (panic "nonce decode failed") $
+                 Saltine.decode nonceBigEndian
+      ciphertext = SecretBox.secretbox key newNonce plaintext
+  in
+    nonceBigEndian <> ciphertext
+
+sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
+sendRecords ep key fileBS =
+  forM_ (go Saltine.zero (chunks 4096 fileBS)) sendRecord
+  where
+    go :: SecretBox.Nonce -> [ByteString] -> [ByteString]
+    go _ [] = []
+    go nonce (chunk:restOfFile) =
+      let cipherText = encrypt key nonce chunk
+      in
+        (cipherText): go (Saltine.nudge nonce) restOfFile
+    chunks sz fileBS | fileBS == BS.empty = []
+                     | otherwise =
+                         let (record, records) = BS.splitAt sz fileBS
+                         in
+                           record: chunks sz records
+    sendRecord :: ByteString -> IO ()
+    sendRecord record = do
+      -- send size of the encrypted payload as 4 bytes, then send record
+      -- format sz as a fixed 4 byte bytestring
+      let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
+      _ <- sendBuffer ep (toS payloadSize)
+      _ <- sendBuffer ep record
+      return ()
 
 sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
 sendFile session appid password filepath = do
@@ -125,6 +159,7 @@ sendFile session appid password filepath = do
           Right (Transit peerAbilities peerHints) -> do
             -- send offer for the file
             offerResp <- offerExchange conn filepath
+            fileBytes <- BS.readFile filepath
             case offerResp of
               Left s -> panic s
               Right _ -> do
@@ -133,11 +168,12 @@ sendFile session appid password filepath = do
                      -- 0. derive transit key
                      let sessionKey = MagicWormhole.sharedKey conn
                          transitKey = MagicWormhole.deriveKey sessionKey (transitPurpose appid)
-                     handshakeExchange endpoint transitKey
                      -- 1. handshakeExchange
+                     handshakeExchange endpoint transitKey
                      -- 2. create record keys
+                     let sRecordKey = makeSenderRecordKey transitKey
                      -- 3. send encrypted chunks of N bytes to the peer
-                     return ()
+                     sendRecords endpoint sRecordKey fileBytes
                      )
           Right _ -> panic "error sending transit message"
     )
