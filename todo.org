@@ -16,3 +16,5 @@
 **** Receive
 ** support for directory transfers via transit protocol.
 ** reorganize the modules to have a file/dir transfer library on top of the wormhole library.
+** handle ack message that the receiver of a file/dir transfer sends to the sender.
+   The ack message is of this form: {"ack": "ok", "sha256": "e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f"}
