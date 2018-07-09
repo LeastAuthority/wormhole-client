@@ -4,7 +4,15 @@
 ** PGP word list support. (DONE)
 ** command completion for code input. (DONE)
 ** Setup CI system
-** Add any relevant tests
+** Tests (hedgehog round trip tests for json messages)
+** Integration tests with python app.
 ** Try to optimize the wordlist completion in receive (256*2 entry table instead of 256*256 entries)
 ** support for transit protocol for files.
+*** direct tcp connection
+**** Send (DONE)
+**** Receive
+*** via relay
+**** Send
+**** Receive
 ** support for directory transfers via transit protocol.
+** reorganize the modules to have a file/dir transfer library on top of the wormhole library.
