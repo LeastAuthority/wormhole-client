@@ -22,34 +22,41 @@ hkdf salt (MagicWormhole.SessionKey key) purpose =
   where
     keySize = ByteSizes.secretBoxKey
 
+data Purpose
+  = SenderHandshake
+  | ReceiverHandshake
+  | SenderRecord
+  | ReceiverRecord
+  deriving (Eq, Show)
+
+deriveKeyFromPurpose :: Purpose -> MagicWormhole.SessionKey -> ByteString
+deriveKeyFromPurpose purpose key =
+  hkdf salt key (purposeStr purpose)
+  where
+    salt = "" :: ByteString
+    purposeStr :: Purpose -> ByteString
+    purposeStr SenderHandshake = "transit_sender"
+    purposeStr ReceiverHandshake = "transit_receiver"
+    purposeStr SenderRecord = "transit_record_sender_key"
+    purposeStr ReceiverRecord = "transit_record_receiver_key"
+
 makeSenderHandshake :: MagicWormhole.SessionKey -> ByteString
 makeSenderHandshake key =
-    let hexid = hex $ hkdf salt key purpose
-        salt = "" :: ByteString
-        purpose = toS @Text @ByteString "transit_sender"
-        hexid' = (toS (toLower (toS @ByteString @Text hexid)))
-    in
-      (toS @Text @ByteString "transit sender ") <> hexid' <> (toS @Text @ByteString " ready\n\n")
+  (toS @Text @ByteString "transit sender ") <> hexid <> (toS @Text @ByteString " ready\n\n")
+  where
+    subkey = deriveKeyFromPurpose SenderHandshake key
+    hexid = (toS (toLower (toS @ByteString @Text (hex subkey))))
+
 
 makeReceiverHandshake :: MagicWormhole.SessionKey -> ByteString
 makeReceiverHandshake key =
-    let hexid = hex $ hkdf salt key purpose
-        salt = "" :: ByteString
-        purpose = toS @Text @ByteString "transit_receiver"
-        hexid' = (toS (toLower (toS @ByteString @Text hexid)))
-    in
-      (toS @Text @ByteString "transit receiver ") <> hexid' <> (toS @Text @ByteString " ready\n\n")
+  (toS @Text @ByteString "transit receiver ") <> hexid <> (toS @Text @ByteString " ready\n\n")
+  where
+    subkey = deriveKeyFromPurpose ReceiverHandshake key
+    hexid = (toS (toLower (toS @ByteString @Text (hex subkey))))
 
 makeSenderRecordKey :: MagicWormhole.SessionKey -> ByteString
-makeSenderRecordKey key =
-  hkdf salt key purpose
-  where
-    salt = "" :: ByteString
-    purpose = toS @Text @ByteString "transit_record_sender_key"
+makeSenderRecordKey = deriveKeyFromPurpose SenderRecord
 
 makeReceiverRecordKey :: MagicWormhole.SessionKey -> ByteString
-makeReceiverRecordKey key =
-  hkdf salt key purpose
-  where
-    salt = "" :: ByteString
-    purpose = toS @Text @ByteString "transit_record_receiver_key"
+makeReceiverRecordKey = deriveKeyFromPurpose ReceiverRecord
