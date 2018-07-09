@@ -54,7 +54,6 @@ import System.Timeout
 import qualified Control.Exception as E
 import qualified Data.Text.IO as TIO
 
-import qualified MagicWormhole
 
 allocateTcpPort :: IO PortNumber
 allocateTcpPort = E.bracket setup close socketPort

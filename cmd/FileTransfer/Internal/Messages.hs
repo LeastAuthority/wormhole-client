@@ -8,7 +8,6 @@ module FileTransfer.Internal.Messages
 where
 
 import Protolude
-import MagicWormhole
 
 import qualified Crypto.KDF.HKDF as HKDF
 import Crypto.Hash (SHA256(..))
