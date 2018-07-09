@@ -7,6 +7,7 @@ module FileTransfer.Internal.Protocol
   , Hint(..)
   , ConnectionHint(..)
   , Ack(..)
+  , TransitAck(..)
   ) where
 
 import Protolude
@@ -123,4 +124,18 @@ instance FromJSON TransitMsg where
     defaultOptions { sumEncoding = ObjectWithSingleField
                    , constructorTagModifier = camelTo2 '-'
                    , fieldLabelModifier = camelTo2 '-'}
+
+data TransitAck
+  = TransitAck
+  { ack :: Text -- ^ "ack" is "ok" implies a successful transfer
+  , sha256 :: Text } -- ^ expected sha256 sum of the transfered file
+  deriving (Eq, Show, Generic)
+
+instance ToJSON TransitAck where
+  toJSON = genericToJSON
+    defaultOptions { sumEncoding = UntaggedValue }
+
+instance FromJSON TransitAck where
+  parseJSON = genericParseJSON
+    defaultOptions { sumEncoding = UntaggedValue }
 

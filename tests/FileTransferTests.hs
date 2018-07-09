@@ -117,3 +117,8 @@ tests = hspec $ do
       encode a1 `shouldBe` "{\"answer\":{\"file_ack\":\"ok\"}}"
       decode (encode a1) `shouldBe` Just a1
       
+  describe "Transit Ack tests" $ do
+    it "encode and decode Transit Ack from receiver to sender" $ do
+      let a1 = TransitAck "ok" "e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f"
+      encode a1 `shouldBe` "{\"ack\":\"ok\",\"sha256\":\"e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f\"}"
+      decode (encode a1) `shouldBe` Just a1
