@@ -25,67 +25,17 @@ import qualified Data.Aeson as Aeson
 import Data.String (String)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
-import qualified Options.Applicative as Opt
 import qualified System.Console.Haskeline as H
 import qualified System.Console.Haskeline.Completion as HC
 import System.Random (randomR, getStdGen)
+import qualified Options.Applicative as Opt
 
 import qualified MagicWormhole
 
 import Paths_hwormhole
 import Helper
+import Options
 import FileTransfer
-
-data Options
-  = Options
-  { cmd :: Command
-  , relayEndpoint :: MagicWormhole.WebSocketEndpoint
-  } deriving (Eq, Show)
-
-data Command
-  = Send TransferType
-  | Receive (Maybe Text)
-  deriving (Eq, Show)
-
-data TransferType
-  = TMsg Text
-  | TFileOrDir FilePath
-  deriving (Show, Eq)
-
-optionsParser :: Opt.Parser Options
-optionsParser
-  = Options
-    <$> commandParser
-    <*> Opt.option
-    (Opt.maybeReader MagicWormhole.parseWebSocketEndpoint)
-    ( Opt.long "relayserver-url" <>
-      Opt.help "Endpoint for the Relay server" <>
-      Opt.value defaultEndpoint <>
-      Opt.showDefault )
-  where
-    -- | Default URL for relay server.
-    --
-    -- This is a relay server run by Brian Warner.
-    defaultEndpoint = fromMaybe (panic "Invalid default URL") (MagicWormhole.parseWebSocketEndpoint "ws://relay.magic-wormhole.io:4000/v1")
-
-commandParser :: Opt.Parser Command
-commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
-  where
-    sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message, a file or a directory"))
-    receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
-    receiveOptions :: Opt.Parser Command
-    receiveOptions = Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
-    sendOptions :: Opt.Parser Command
-    sendOptions = Send <$> parseTransferType
-    parseTransferType :: Opt.Parser TransferType
-    parseTransferType = msgParser <|> fileOrDirParser
-    msgParser :: Opt.Parser TransferType
-    msgParser = TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
-    fileOrDirParser :: Opt.Parser TransferType
-    fileOrDirParser = TFileOrDir <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
-
-opts :: Opt.ParserInfo Options
-opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
 
 -- | genWordlist would produce a list of the form
 --   [ ("aardwark", "adroitness"),
@@ -129,13 +79,13 @@ allocatePassword wordlist = do
 type Password = ByteString
 
 -- | Send a text message to a Magic Wormhole peer.
-sendText :: MagicWormhole.Session -> Password -> Text -> IO ()
-sendText session password message = do
+sendText :: MagicWormhole.Session -> Password -> (Text -> IO ()) -> Text -> IO ()
+sendText session password printHelpFn message = do
   nameplate <- MagicWormhole.allocate session
   mailbox <- MagicWormhole.claim session nameplate
   peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
   let (MagicWormhole.Nameplate n) = nameplate
-  printSendHelpText $ toS n <> "-" <> toS password
+  printHelpFn $ toS n <> "-" <> toS password
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         let offer = MagicWormhole.Message message
@@ -177,11 +127,11 @@ main = do
         TMsg msg -> do
           -- text message
           password <- allocatePassword wordList
-          sendText session (toS password) msg
+          sendText session (toS password) printSendHelpText msg
         TFileOrDir filename -> do
           -- file or dir
           password <- allocatePassword wordList
-          sendFile session appID (toS password) filename
+          sendFile session appID (toS password) printSendHelpText filename
           -- TIO.putStrLn "file or directory transfers not supported yet"
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
       case maybeCode of

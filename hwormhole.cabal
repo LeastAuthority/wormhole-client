@@ -22,7 +22,6 @@ library
                      , FileTransfer.Internal.Network
                      , FileTransfer.Internal.Protocol
                      , FileTransfer.Internal.Messages
-                     , Helper
   build-depends:       base >=4.11 && <4.12
                      , bytestring
                      , aeson
@@ -44,6 +43,8 @@ library
 executable hwormhole-exe
   main-is:             Main.hs
   other-modules:       Paths_hwormhole
+                     , Helper
+                     , Options
   -- other-extensions:
   build-depends:       base >=4.11 && <4.12
                      , bytestring

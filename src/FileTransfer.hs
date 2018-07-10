@@ -34,9 +34,6 @@ import FileTransfer.Internal.Network
 import FileTransfer.Internal.Protocol
 import FileTransfer.Internal.Messages
 
-import qualified Data.Text.IO as TIO
-import Helper
-
 type Password = ByteString
 
 getFileSize :: FilePath -> IO FileOffset
@@ -174,7 +171,6 @@ receiveRecord ep key = do
   -- decrypt the record
   lenBytes <- recvBuffer ep 4
   let len = runGet getWord32be (BL.fromStrict lenBytes)
-  TIO.putStrLn $  "length of recv record" <> (show len)
   encRecord <- recvBuffer ep (fromIntegral len)
   case decrypt key encRecord of
     Left s -> panic s
@@ -188,16 +184,15 @@ receiveAckMessage ep key = do
                                     | otherwise -> return (Left "transit ack failure")
     Left s -> return (Left $ toS ("transit ack failure: " <> s))
 
-sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
-sendFile session appid password filepath = do
---   -- steps
---   -- * first establish a wormhole session with the receiver and
---   --   then talk the filetransfer protocol over it as follows.
+sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> FilePath -> IO ()
+sendFile session appid password printHelpFn filepath = do
+  -- first establish a wormhole session with the receiver and
+  -- then talk the filetransfer protocol over it as follows.
   nameplate <- MagicWormhole.allocate session
   mailbox <- MagicWormhole.claim session nameplate
   peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
   let (MagicWormhole.Nameplate n) = nameplate
-  printSendHelpText $ toS n <> "-" <> toS password
+  printHelpFn $ toS n <> "-" <> toS password
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- exchange abilities
