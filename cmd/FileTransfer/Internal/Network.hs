@@ -35,9 +35,6 @@ import Network.Socket
   , PortNumber( PortNum )
   , withSocketsDo
   )
-import Network
-  ( PortID(..)
-  )
 
 import Network.Info
   ( getNetworkInterfaces
@@ -77,14 +74,14 @@ ipv4ToHostname ip =
 
 buildDirectHints :: IO [ConnectionHint]
 buildDirectHints = do
-  (PortNum portnum) <- allocateTcpPort
+  portnum <- allocateTcpPort
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
         filter (\nwInterface -> let (IPv4 addr4) = ipv4 nwInterface in addr4 /= 0x0100007f) nwInterfaces
   return $ map (\nwInterface ->
                   let (IPv4 addr4) = ipv4 nwInterface in
                   Direct Hint { hostname = ipv4ToHostname addr4
-                              , port = portnum
+                              , port = fromIntegral portnum
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
