@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FileTransfer.Internal.Messages
+module Transit.Internal.Messages
   ( makeSenderHandshake
   , makeReceiverHandshake
   , makeSenderRecordKey

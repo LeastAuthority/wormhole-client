@@ -1,6 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module FileTransfer.Internal.Protocol
+module Transit.Internal.Protocol
   ( TransitMsg(..)
   , Ability(..)
   , AbilityV1(..)

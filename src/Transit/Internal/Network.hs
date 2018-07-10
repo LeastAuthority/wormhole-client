@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module FileTransfer.Internal.Network
+module Transit.Internal.Network
   ( allocateTcpPort
   , buildDirectHints
   , runTransitProtocol
@@ -10,7 +10,7 @@ module FileTransfer.Internal.Network
 
 import Protolude
 
-import FileTransfer.Internal.Protocol
+import Transit.Internal.Protocol
 
 import Network.Socket
   ( addrSocketType
@@ -131,4 +131,3 @@ runTransitProtocol as hs app = do
     Just ep -> app ep
     Nothing -> return ()
 
--- receiveFile :: Session -> Passcode -> IO Status

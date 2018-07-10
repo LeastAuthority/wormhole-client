@@ -7,7 +7,7 @@ import Protolude
 import Test.Hspec
 import qualified Crypto.Saltine.Class as Saltine
 
-import FileTransfer.Internal.Messages
+import Transit.Internal.Messages
 
 tests :: IO ()
 tests = hspec $ do

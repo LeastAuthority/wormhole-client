@@ -5,7 +5,7 @@ where
 
 import Protolude
 
-import FileTransfer.Internal.Protocol
+import Transit.Internal.Protocol
 
 import Test.Hspec
 import Data.Aeson

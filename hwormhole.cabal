@@ -19,9 +19,9 @@ data-files:          wordlist.txt
 library
   hs-source-dirs:      src
   exposed-modules:     FileTransfer
-                     , FileTransfer.Internal.Network
-                     , FileTransfer.Internal.Protocol
-                     , FileTransfer.Internal.Messages
+                     , Transit.Internal.Network
+                     , Transit.Internal.Protocol
+                     , Transit.Internal.Messages
   build-depends:       base >=4.11 && <4.12
                      , bytestring
                      , aeson

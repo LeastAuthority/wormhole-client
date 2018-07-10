@@ -30,9 +30,9 @@ import qualified Crypto.Spake2 as Spake2
 import qualified MagicWormhole
 import Data.Binary.Get (getWord32be, runGet)
 
-import FileTransfer.Internal.Network
-import FileTransfer.Internal.Protocol
-import FileTransfer.Internal.Messages
+import Transit.Internal.Network
+import Transit.Internal.Protocol
+import Transit.Internal.Messages
 
 type Password = ByteString
 
