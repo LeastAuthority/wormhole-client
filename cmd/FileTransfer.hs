@@ -23,14 +23,17 @@ import Data.Aeson
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Builder(toLazyByteString, word32BE)
 import qualified Crypto.Spake2 as Spake2
 import qualified MagicWormhole
+import Data.Binary.Get (getWord32be, runGet)
 
 import FileTransfer.Internal.Network
 import FileTransfer.Internal.Protocol
 import FileTransfer.Internal.Messages
 
+import qualified Data.Text.IO as TIO
 import Helper
 
 type Password = ByteString
@@ -147,6 +150,18 @@ sendRecords ep key fileStream = forM_ records sendRecord
       _ <- sendBuffer ep record
       return ()
 
+receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
+receiveRecord ep key = do
+  -- read 4 bytes that consists of length
+  -- read as much bytes specified by the length. That would be encrypted record
+  -- decrypt the record
+  lenBytes <- recvBuffer ep 4
+  let len = runGet getWord32be (BL.fromStrict lenBytes)
+  TIO.putStrLn $  "length of recv record" <> (show len)
+  encRecord <- recvBuffer ep (fromIntegral len)
+  -- TODO: decrypt the record
+  return encRecord
+
 sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
 sendFile session appid password filepath = do
 --   -- steps
@@ -181,6 +196,11 @@ sendFile session appid password filepath = do
                      let sRecordKey = makeSenderRecordKey transitKey
                      -- 3. send encrypted chunks of N bytes to the peer
                      sendRecords endpoint sRecordKey fileBytes
+                     -- 4. TODO: read a record that should contain the transit Ack.
+                     --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                     let rRecordKey = makeReceiverRecordKey transitKey
+                     _ <- receiveRecord endpoint rRecordKey
+                     return ()
                      )
           Right _ -> panic "error sending transit message"
     )

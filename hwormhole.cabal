@@ -28,6 +28,7 @@ executable hwormhole
   build-depends:       base >=4.11 && <4.12
                      , bytestring
                      , aeson
+                     , binary
                      , haskeline
                      , magic-wormhole
                      , network
