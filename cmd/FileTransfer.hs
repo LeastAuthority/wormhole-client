@@ -22,15 +22,19 @@ import Data.Aeson
   )
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
+import Crypto.Saltine.Internal.ByteSizes (boxNonce)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import Data.ByteString.Builder(toLazyByteString, word32BE)
 import qualified Crypto.Spake2 as Spake2
 import qualified MagicWormhole
+import Data.Binary.Get (getWord32be, runGet)
 
 import FileTransfer.Internal.Network
 import FileTransfer.Internal.Protocol
 import FileTransfer.Internal.Messages
 
+import qualified Data.Text.IO as TIO
 import Helper
 
 type Password = ByteString
@@ -108,14 +112,30 @@ handshakeExchange ep key = do
         sHandshakeMsg = makeSenderHandshake key
         rHandshakeMsg = makeReceiverHandshake key
 
+-- | encrypt the given chunk with the given secretbox key and nonce.
+-- Saltine's nonce seem represented as a big endian bytestring.
+-- However, to interop with the wormhole python client, we need to
+-- use and send nonce as a little endian bytestring.
 encrypt :: SecretBox.Key -> SecretBox.Nonce -> ByteString -> ByteString
 encrypt key nonce plaintext =
-  let nonceBigEndian = BS.reverse $ Saltine.encode nonce
+  let nonceLE = BS.reverse $ Saltine.encode nonce
       newNonce = fromMaybe (panic "nonce decode failed") $
-                 Saltine.decode nonceBigEndian
+                 Saltine.decode nonceLE
       ciphertext = SecretBox.secretbox key newNonce plaintext
   in
-    nonceBigEndian <> ciphertext
+    nonceLE <> ciphertext
+
+decrypt :: SecretBox.Key -> ByteString -> Either Text ByteString
+decrypt key ciphertext =
+  -- extract nonce from ciphertext.
+  let (nonceBytes, ct) = BS.splitAt boxNonce ciphertext
+      nonce = fromMaybe (panic "unable to decode nonce") $
+              Saltine.decode nonceBytes
+      maybePlainText = SecretBox.secretboxOpen key nonce ct
+  in
+    case maybePlainText of
+      Just pt -> Right pt
+      Nothing -> Left "decription error"
 
 -- | Given the record encryption key and a bytestream, chop
 -- the bytestream into blocks of 4096 bytes, encrypt them and
@@ -146,6 +166,26 @@ sendRecords ep key fileStream = forM_ records sendRecord
       _ <- sendBuffer ep (toS payloadSize)
       _ <- sendBuffer ep record
       return ()
+
+receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
+receiveRecord ep key = do
+  -- read 4 bytes that consists of length
+  -- read as much bytes specified by the length. That would be encrypted record
+  -- decrypt the record
+  lenBytes <- recvBuffer ep 4
+  let len = runGet getWord32be (BL.fromStrict lenBytes)
+  TIO.putStrLn $  "length of recv record" <> (show len)
+  encRecord <- recvBuffer ep (fromIntegral len)
+  case decrypt key encRecord of
+    Left s -> panic s
+    Right pt -> return pt
+
+receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Text Text)
+receiveAckMessage ep key = do
+  ackBytes <- BL.fromStrict <$> receiveRecord ep key
+  case eitherDecode ackBytes of
+    Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
+    Left s -> return (Left "transit ack failure")
 
 sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
 sendFile session appid password filepath = do
@@ -181,6 +221,11 @@ sendFile session appid password filepath = do
                      let sRecordKey = makeSenderRecordKey transitKey
                      -- 3. send encrypted chunks of N bytes to the peer
                      sendRecords endpoint sRecordKey fileBytes
+                     -- 4. TODO: read a record that should contain the transit Ack.
+                     --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                     let rRecordKey = makeReceiverRecordKey transitKey
+                     ackMsg <- receiveAckMessage endpoint rRecordKey
+                     return ()
                      )
           Right _ -> panic "error sending transit message"
     )
