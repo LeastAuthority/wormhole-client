@@ -32,7 +32,6 @@ import Network.Socket
   , setSocketOption
   , SocketOption( ReuseAddr )
   , AddrInfoFlag ( AI_NUMERICSERV )
-  , PortNumber( PortNum )
   , withSocketsDo
   )
 

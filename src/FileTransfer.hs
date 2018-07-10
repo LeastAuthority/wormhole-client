@@ -185,7 +185,8 @@ receiveAckMessage ep key = do
   ackBytes <- BL.fromStrict <$> receiveRecord ep key
   case eitherDecode ackBytes of
     Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
-    Left s -> return (Left "transit ack failure")
+                                    | otherwise -> return (Left "transit ack failure")
+    Left s -> return (Left $ toS ("transit ack failure: " <> s))
 
 sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> FilePath -> IO () -- Response
 sendFile session appid password filepath = do

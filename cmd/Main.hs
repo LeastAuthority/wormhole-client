@@ -161,7 +161,9 @@ receiveText session code = do
         MagicWormhole.PlainText received <- atomically $ MagicWormhole.receiveMessage conn
         case Aeson.eitherDecode (toS received) of
           Left err -> panic $ "Could not decode message: " <> show err
-          Right (MagicWormhole.Message message) -> pure message)
+          Right (MagicWormhole.Message message) -> pure message
+          Right (MagicWormhole.File _ _) -> panic $ "Unexpected message type"
+    )
 
 main :: IO ()
 main = do
