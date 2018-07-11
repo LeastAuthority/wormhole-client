@@ -22,6 +22,7 @@ import Data.Aeson
   )
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
+import qualified Crypto.Hash as Hash
 import Crypto.Saltine.Internal.ByteSizes (boxNonce)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -134,17 +135,24 @@ decrypt key ciphertext =
       Just pt -> Right pt
       Nothing -> Left "decription error"
 
+type PlainText = ByteString
+type CipherText = ByteString
+
 -- | Given the record encryption key and a bytestream, chop
 -- the bytestream into blocks of 4096 bytes, encrypt them and
 -- send it to the given network endpoint. The length of the
--- encrypted record is sent first, encoded as a4-byte big-endian
--- number. After that, the encrypted record itself is sent.
-sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
-sendRecords ep key fileStream = forM_ records sendRecord
+-- encrypted record is sent first, encoded as a 4-byte
+-- big-endian number. After that, the encrypted record itself
+-- is sent. `sendRecords` returns the SHA256 hash of the encrypted
+-- file, which can be compared with the recipient's sha256 hash.
+sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO Text
+sendRecords ep key fileStream = do
+  forM_ records sendRecord
+  return $ show (sha256sum blocks)
   where
     records = go Saltine.zero blocks
     blocks = chop 4096 fileStream
-    go :: SecretBox.Nonce -> [ByteString] -> [ByteString]
+    go :: SecretBox.Nonce -> [PlainText] -> [CipherText]
     go _ [] = []
     go nonce (chunk:restOfFile) =
       let cipherText = encrypt key nonce chunk
@@ -163,6 +171,12 @@ sendRecords ep key fileStream = forM_ records sendRecord
       _ <- sendBuffer ep (toS payloadSize)
       _ <- sendBuffer ep record
       return ()
+    sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
+    sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
+      where
+        hashBlocks :: Hash.Context Hash.SHA256 -> [ByteString] -> Hash.Digest Hash.SHA256
+        hashBlocks ctx [] = Hash.hashFinalize ctx
+        hashBlocks ctx (r:rs) = hashBlocks (Hash.hashUpdate ctx r) rs
 
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
 receiveRecord ep key = do
@@ -184,6 +198,12 @@ receiveAckMessage ep key = do
                                     | otherwise -> return (Left "transit ack failure")
     Left s -> return (Left $ toS ("transit ack failure: " <> s))
 
+-- | Given the magic-wormhole session, appid, password, a function to print a helpful message
+-- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
+-- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
+-- the wormhole securely. The receiver, on successfully receiving the file, would compute
+-- a sha256 sum of the encrypted file and sends it across to the sender, along with an
+-- acknowledgement, which the sender can verify.
 sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> FilePath -> IO ()
 sendFile session appid password printHelpFn filepath = do
   -- first establish a wormhole session with the receiver and
@@ -216,12 +236,18 @@ sendFile session appid password printHelpFn filepath = do
                      -- 2. create record keys
                      let sRecordKey = makeSenderRecordKey transitKey
                      -- 3. send encrypted chunks of N bytes to the peer
-                     sendRecords endpoint sRecordKey fileBytes
+                     txSha256Hash <- sendRecords endpoint sRecordKey fileBytes
                      -- 4. TODO: read a record that should contain the transit Ack.
                      --    If ack is not ok or the sha256sum is incorrect, flag an error.
                      let rRecordKey = makeReceiverRecordKey transitKey
-                     ackMsg <- receiveAckMessage endpoint rRecordKey
-                     return ()
+                     rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                     case rxAckMsg of
+                       Right rxSha256Hash ->
+                         if txSha256Hash /= rxSha256Hash
+                         then panic "sha256 mismatch"
+                         else
+                           return ()
+                       Left e -> panic e
                      )
           Right _ -> panic "error sending transit message"
     )
