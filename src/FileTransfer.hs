@@ -54,8 +54,7 @@ sendFile session appid password printHelpFn filepath = do
                 runTransitProtocol peerAbilities peerHints
                   (\endpoint -> do
                      -- 0. derive transit key
-                     let sessionKey = MagicWormhole.sharedKey conn
-                         transitKey = MagicWormhole.deriveKey sessionKey (transitPurpose appid)
+                     let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
                      -- 1. handshakeExchange
                      handshakeExchange endpoint transitKey
                      -- 2. create record keys
