@@ -10,7 +10,7 @@ module Transit.Internal.Network
 
 import Protolude
 
-import Transit.Internal.Protocol
+import Transit.Internal.Messages
 
 import Network.Socket
   ( addrSocketType

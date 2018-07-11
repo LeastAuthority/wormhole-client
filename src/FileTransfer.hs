@@ -32,7 +32,7 @@ import qualified MagicWormhole
 import Data.Binary.Get (getWord32be, runGet)
 
 import Transit.Internal.Network
-import Transit.Internal.Protocol
+import Transit.Internal.Peer
 import Transit.Internal.Messages
 
 type Password = ByteString

@@ -20,7 +20,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     FileTransfer
                      , Transit.Internal.Network
-                     , Transit.Internal.Protocol
+                     , Transit.Internal.Peer
                      , Transit.Internal.Messages
   build-depends:       base >=4.11 && <4.12
                      , bytestring
@@ -75,6 +75,6 @@ test-suite hwormhole-tests
                     , hspec
                     , saltine
                     , hwormhole
-  other-modules:      FileTransferTests
+  other-modules:      ProtocolTests
                     , MessagesTests
   default-language:   Haskell2010
