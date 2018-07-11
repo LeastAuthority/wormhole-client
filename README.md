@@ -10,6 +10,34 @@ This builds on the example application in the MagicWormhole library to
 build a full fledged wormhole file transfer application that interoperates
 with the `wormhole` application.
 
+## Building
+
+We need a forked version of `[haskell-magic-wormhole][3]` at the moment. This will
+go away as soon as the changes in there are cleaned up and reviewed by the upstream.
+
+I use `cabal` for my projects. Cabal 2.2 has come a long way and is a pleasure to use.
+To use our version of `haskell-magic-wormhole`, I do the following:
+
+1. create a top level directory called `wormhole`
+2. `cd wormhole`
+3. `git clone https://github.com/vu3rdd/haskell-magic-wormhole -b file-transfer`
+4. `git clone https://github.com/vu3rdd/wormhole-client`
+5. create a file called `cabal.project` that has just one line:
+```
+packages: wormhole-client haskell-magic-wormhole
+```
+
+That's it. Now, we use the `new-*`commands of `cabal-install` to download, build
+and install dependencies, test our code and run the executables.
+
+```
+cabal new-build hwormhole
+cabal new-test hwormhole
+cabal new-run hwormhole:hwormhole-exe -- send --text foobar
+```
+
+There is a `--help` command. It works for subcommands as well.
+
 ## What works at the moment
 
 - Message send and receive
@@ -23,3 +51,4 @@ application.
 
 [1]: https://github.com/warner/magic-wormhole
 [2]: https://github.com/LeastAuthority/haskell-magic-wormhole
+[3]: https://github.com/vu3rdd/haskell-magic-wormhole
