@@ -7,7 +7,7 @@ import Protolude
 import Test.Hspec
 import qualified Crypto.Saltine.Class as Saltine
 
-import Transit.Internal.Messages
+import Transit.Internal.Peer
 
 tests :: IO ()
 tests = hspec $ do

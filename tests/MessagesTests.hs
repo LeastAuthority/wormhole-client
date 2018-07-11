@@ -5,7 +5,7 @@ where
 
 import Protolude
 
-import Transit.Internal.Protocol
+import Transit.Internal.Messages
 
 import Test.Hspec
 import Data.Aeson
