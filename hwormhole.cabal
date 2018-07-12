@@ -19,6 +19,7 @@ data-files:          wordlist.txt
 library
   hs-source-dirs:      src
   exposed-modules:     FileTransfer
+                     , TextMessages
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages

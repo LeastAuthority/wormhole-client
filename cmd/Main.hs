@@ -20,8 +20,6 @@ module Main where
 
 import Protolude
 
-import qualified Crypto.Spake2 as Spake2
-import qualified Data.Aeson as Aeson
 import Data.String (String)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
@@ -36,6 +34,7 @@ import Paths_hwormhole
 import Helper
 import Options
 import FileTransfer
+import TextMessages
 
 -- | genWordlist would produce a list of the form
 --   [ ("aardwark", "adroitness"),
@@ -72,25 +71,6 @@ allocatePassword wordlist = do
       Just oddW = snd <$> atMay wordlist r1
   return $ Text.concat [oddW, "-", evenW]
 
--- | A password used to exchange with a Magic Wormhole peer.
---
--- XXX: Just picking ByteString because that's the least amount of work. Need
--- to look up exact type of password in the magic-wormhole docs.
-type Password = ByteString
-
--- | Send a text message to a Magic Wormhole peer.
-sendText :: MagicWormhole.Session -> Password -> (Text -> IO ()) -> Text -> IO ()
-sendText session password printHelpFn message = do
-  nameplate <- MagicWormhole.allocate session
-  mailbox <- MagicWormhole.claim session nameplate
-  peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
-  let (MagicWormhole.Nameplate n) = nameplate
-  printHelpFn $ toS n <> "-" <> toS password
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
-    (\conn -> do
-        let offer = MagicWormhole.Message message
-        MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer))))
-
 completeWord :: MonadIO m => [Text] -> HC.CompletionFunc m
 completeWord wordlist = HC.completeWord Nothing "" completionFunc
   where
@@ -98,22 +78,6 @@ completeWord wordlist = HC.completeWord Nothing "" completionFunc
     completionFunc word = do
       let completions = filter (toS word `Text.isPrefixOf`) wordlist
       return $ map (HC.simpleCompletion . toS) completions
-
--- | Receive a text message from a Magic Wormhole peer.
-receiveText :: MagicWormhole.Session -> Text -> IO Text
-receiveText session code = do
-  let codeSplit = Text.split (=='-') code
-  let (Just nameplate) = headMay codeSplit
-  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
-  peer <- MagicWormhole.open session mailbox
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
-    (\conn -> do
-        MagicWormhole.PlainText received <- atomically $ MagicWormhole.receiveMessage conn
-        case Aeson.eitherDecode (toS received) of
-          Left err -> panic $ "Could not decode message: " <> show err
-          Right (MagicWormhole.Message message) -> pure message
-          Right (MagicWormhole.File _ _) -> panic $ "Unexpected message type"
-    )
 
 main :: IO ()
 main = do

@@ -69,8 +69,7 @@ sendFile session appid password printHelpFn filepath = do
                        Right rxSha256Hash ->
                          if txSha256Hash /= rxSha256Hash
                          then panic "sha256 mismatch"
-                         else
-                           return ()
+                         else return ()
                        Left e -> panic e
                      )
           Right _ -> panic "error sending transit message"
