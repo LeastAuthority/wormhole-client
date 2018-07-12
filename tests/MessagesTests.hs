@@ -143,11 +143,17 @@ prop_ConnectionHintTrip = property $ do
   x <- forAll Generator.connectionHintGen
   tripping x encode eitherDecode
 
+prop_AckTrip :: Property
+prop_AckTrip = property $ do
+  x <- forAll Generator.ackGen
+  tripping x encode eitherDecode
+
 messagesRoundTripTests :: IO Bool
 messagesRoundTripTests =
   checkSequential $ Group "Messages"
   [ ("prop_AbilityTrip", prop_AbilityTrip)
   , ("prop_HintTrip", prop_HintTrip)
   , ("prop_ConnectionHintTrip", prop_ConnectionHintTrip)
+  , ("prop_AckTrip", prop_AckTrip)
   ]
 

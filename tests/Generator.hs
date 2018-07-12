@@ -4,6 +4,7 @@ module Generator
   , abilityV1Gen
   , hintGen
   , connectionHintGen
+  , ackGen
   )
 where
 
@@ -18,6 +19,7 @@ import Transit.Internal.Messages
   , AbilityV1(..)
   , Hint(..)
   , ConnectionHint(..)
+  , Ack(..)
   )
 
 abilityGen :: MonadGen m => m Ability
@@ -39,4 +41,10 @@ connectionHintGen :: MonadGen m => m ConnectionHint
 connectionHintGen = Gen.choice
   [ Direct <$> hintGen
   , Relay <$> abilityV1Gen <*> Gen.list (Range.linear 0 10) hintGen
+  ]
+
+ackGen :: MonadGen m => m Ack
+ackGen = Gen.choice
+  [ FileAck <$> Gen.text (Range.linear 0 100) Gen.ascii
+  , MsgAck <$> Gen.text (Range.linear 0 100) Gen.ascii
   ]
