@@ -9,6 +9,7 @@ module Transit.Internal.Peer
   , handshakeExchange
   , sendRecords
   , receiveAckMessage
+  , sendTransitMsg
   )
 where
 
@@ -89,29 +90,32 @@ makeReceiverRecordKey key =
 -- Receiver sends either another Transit message or an Error message.
 transitExchange :: MagicWormhole.EncryptedConnection -> IO (Either Text TransitMsg)
 transitExchange conn = do
-  (_, rxMsg) <- concurrently sendTransitMsg receiveTransitMsg
+  (_, rxMsg) <- concurrently (sendTransitMsg conn) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
     Left s -> return (Left (toS s))
     Right (Error errstr) -> return (Left errstr)
     Right (Answer _) -> return (Left "Answer message from the peer is unexpected")
   where
-    sendTransitMsg = do
-      -- create abilities
-      let abilities' = [Ability DirectTcpV1]
-      port' <- allocateTcpPort
-      hints' <- buildDirectHints
-
-      -- create transit message
-      let txTransitMsg = Transit abilities' hints'
-      let encodedTransitMsg = toS (encode txTransitMsg)
-
-      -- send the transit message (dictionary with key as "transit" and value as abilities)
-      MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
     receiveTransitMsg = do
       -- receive the transit from the receiving side
       MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
       return responseMsg
+
+sendTransitMsg :: MagicWormhole.EncryptedConnection -> IO ()
+sendTransitMsg conn = do
+  -- create abilities
+  let abilities' = [Ability DirectTcpV1]
+  port' <- allocateTcpPort
+  hints' <- buildDirectHints
+
+  -- create transit message
+  let txTransitMsg = Transit abilities' hints'
+  let encodedTransitMsg = toS (encode txTransitMsg)
+
+  -- send the transit message (dictionary with key as "transit" and value as abilities)
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
+
 
 offerExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
 offerExchange conn path = do
