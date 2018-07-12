@@ -18,4 +18,3 @@ tests = hspec $ do
     it "receiver handshake for a fixed key" $ do
       let rkey = (fromMaybe (panic "error decoding bytestring into secretbox key") $ Saltine.decode (toS @Text @ByteString "12345678901234567890123456789012"))
       makeReceiverHandshake rkey `shouldBe` (toS @Text @ByteString "transit receiver 3b0d65f31e63b490b4edc13cf27a8b09cfb53c479f8ab67bc984e9f392ea28f4 ready\n\n")
-

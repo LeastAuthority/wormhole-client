@@ -1,5 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
 module MessagesTests
   ( tests
+  , abilitiesRoundTripTests
   )
 where
 
@@ -11,7 +13,10 @@ import Test.Hspec
 import Data.Aeson
   ( encode
   , decode
+  , eitherDecode
   )
+import Hedgehog (forAll, property, Property, Group(..), checkSequential, tripping)
+import qualified Generator
 
 tests :: IO ()
 tests = hspec $ do
@@ -122,3 +127,21 @@ tests = hspec $ do
       let a1 = TransitAck "ok" "e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f"
       encode a1 `shouldBe` "{\"ack\":\"ok\",\"sha256\":\"e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f\"}"
       decode (encode a1) `shouldBe` Just a1
+
+prop_AbilitiesTrip :: Property
+prop_AbilitiesTrip = property $ do
+  x <- forAll Generator.abilitiesGen
+  tripping x encode eitherDecode
+
+prop_HintsTrip :: Property
+prop_HintsTrip = property $ do
+  x <- forAll Generator.hintsGen
+  tripping x encode eitherDecode
+
+abilitiesRoundTripTests :: IO Bool
+abilitiesRoundTripTests =
+  checkSequential $ Group "Messages"
+  [ ("prop_AbilitiesTrip", prop_AbilitiesTrip)
+  , ("prop_HintsTrip", prop_HintsTrip)
+  ]
+

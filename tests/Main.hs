@@ -9,3 +9,4 @@ main :: IO ()
 main = do
   ProtocolTests.tests
   MessagesTests.tests
+  MessagesTests.abilitiesRoundTripTests >> return ()

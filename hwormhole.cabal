@@ -76,6 +76,8 @@ test-suite hwormhole-tests
                     , hspec
                     , saltine
                     , hwormhole
+                    , hedgehog
   other-modules:      ProtocolTests
                     , MessagesTests
+                    , Generator
   default-language:   Haskell2010
