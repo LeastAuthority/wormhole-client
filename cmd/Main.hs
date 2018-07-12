@@ -125,15 +125,13 @@ main = do
           -- TIO.putStrLn "file or directory transfers not supported yet"
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
       case maybeCode of
-        Nothing -> do -- get the code as a user input
+        Nothing -> do
+          -- get the code as a user input
           code <- getCode session wordList
-          message <- receiveText session code
-          putStr message
+          receive session code
         Just code -> do
           -- if the sender is doing a file/dir transfer, it will send
           -- the transit first. (Unfortunate!)
-          message <- receiveText session code
-          putStr message
-  return ()
+          receive session code
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"

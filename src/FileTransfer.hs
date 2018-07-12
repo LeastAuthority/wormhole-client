@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module FileTransfer
   ( sendFile
+  , receive
   )
 where
 
@@ -11,6 +12,9 @@ import Protolude
 
 import qualified Data.ByteString as BS
 import qualified Crypto.Spake2 as Spake2
+import qualified Data.Text as Text
+import qualified Data.Text.IO as TIO
+import qualified Data.Aeson as Aeson
 
 import qualified MagicWormhole
 
@@ -73,5 +77,38 @@ sendFile session appid password printHelpFn filepath = do
                        Left e -> panic e
                      )
           Right _ -> panic "error sending transit message"
+    )
+
+receive :: MagicWormhole.Session -> Text -> IO ()
+receive session code = do
+  -- establish the connection
+  let codeSplit = Text.split (=='-') code
+  let (Just nameplate) = headMay codeSplit
+  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
+  peer <- MagicWormhole.open session mailbox
+  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
+    (\conn -> do
+        -- unfortunately, the receiver has no idea which message to expect.
+        -- If the sender is only sending a text message, it gets an offer first
+        -- if the sender is sending a file/directory, then transit comes first
+        -- and then offer comes in.
+        MagicWormhole.PlainText received <- atomically $ MagicWormhole.receiveMessage conn
+        case Aeson.eitherDecode (toS received) of
+          Right (MagicWormhole.Message message) -> TIO.putStrLn message
+          -- ok, we received the Transit Message, send back a transit message
+          Left err -> case Aeson.eitherDecode (toS received) of
+                        Right t@(Transit abilities hints) -> do
+                          sendTransitMsg conn
+                          -- now expect an offer message
+                          MagicWormhole.PlainText offerMsg <- atomically $ MagicWormhole.receiveMessage conn
+                          case Aeson.eitherDecode (toS offerMsg) of
+                            Left err -> panic "unable to decode offer msg"
+                            Right o@(MagicWormhole.File name size) -> do
+                              -- send an answer message with file_ack.
+                              let ans = Answer (FileAck "ok")
+                              MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode ans)))
+                              -- TODO: a tcp listener must be up and running at this point.
+                              -- TCPEndpoint
+                        Right _ -> panic $ "Could not decode message: " <> show err
     )
 
