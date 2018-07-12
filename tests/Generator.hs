@@ -5,6 +5,8 @@ module Generator
   , hintGen
   , connectionHintGen
   , ackGen
+  , transitMsgGen
+  , transitAckGen
   )
 where
 
@@ -20,6 +22,8 @@ import Transit.Internal.Messages
   , Hint(..)
   , ConnectionHint(..)
   , Ack(..)
+  , TransitMsg(..)
+  , TransitAck(..)
   )
 
 abilityGen :: MonadGen m => m Ability
@@ -48,3 +52,17 @@ ackGen = Gen.choice
   [ FileAck <$> Gen.text (Range.linear 0 100) Gen.ascii
   , MsgAck <$> Gen.text (Range.linear 0 100) Gen.ascii
   ]
+
+transitMsgGen :: MonadGen m => m TransitMsg
+transitMsgGen = Gen.choice
+  [ Error <$> Gen.text (Range.linear 0 100) Gen.unicode
+  , Answer <$> ackGen
+  , Transit
+    <$> Gen.list (Range.linear 0 5) abilityGen
+    <*> Gen.list (Range.linear 0 5) connectionHintGen
+  ]
+
+transitAckGen :: MonadGen m => m TransitAck
+transitAckGen = TransitAck
+  <$> Gen.text (Range.linear 0 5) Gen.unicode
+  <*> Gen.text (Range.singleton 64) Gen.hexit

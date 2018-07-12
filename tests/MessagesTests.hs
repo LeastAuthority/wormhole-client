@@ -128,32 +128,44 @@ tests = hspec $ do
       encode a1 `shouldBe` "{\"ack\":\"ok\",\"sha256\":\"e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f\"}"
       decode (encode a1) `shouldBe` Just a1
 
-prop_AbilityTrip :: Property
-prop_AbilityTrip = property $ do
+prop_abilityTrip :: Property
+prop_abilityTrip = property $ do
   x <- forAll Generator.abilityGen
   tripping x encode eitherDecode
 
-prop_HintTrip :: Property
-prop_HintTrip = property $ do
+prop_hintTrip :: Property
+prop_hintTrip = property $ do
   x <- forAll Generator.hintGen
   tripping x encode eitherDecode
 
-prop_ConnectionHintTrip :: Property
-prop_ConnectionHintTrip = property $ do
+prop_connectionHintTrip :: Property
+prop_connectionHintTrip = property $ do
   x <- forAll Generator.connectionHintGen
   tripping x encode eitherDecode
 
-prop_AckTrip :: Property
-prop_AckTrip = property $ do
+prop_ackTrip :: Property
+prop_ackTrip = property $ do
   x <- forAll Generator.ackGen
+  tripping x encode eitherDecode
+
+prop_transitMsgTrip :: Property
+prop_transitMsgTrip = property $ do
+  x <- forAll Generator.transitMsgGen
+  tripping x encode eitherDecode
+
+prop_transitAckTrip :: Property
+prop_transitAckTrip = property $ do
+  x <- forAll Generator.transitAckGen
   tripping x encode eitherDecode
 
 messagesRoundTripTests :: IO Bool
 messagesRoundTripTests =
   checkSequential $ Group "Messages"
-  [ ("prop_AbilityTrip", prop_AbilityTrip)
-  , ("prop_HintTrip", prop_HintTrip)
-  , ("prop_ConnectionHintTrip", prop_ConnectionHintTrip)
-  , ("prop_AckTrip", prop_AckTrip)
+  [ ("prop_abilityTrip", prop_abilityTrip)
+  , ("prop_hintTrip", prop_hintTrip)
+  , ("prop_connectionHintTrip", prop_connectionHintTrip)
+  , ("prop_ackTrip", prop_ackTrip)
+  , ("prop_transitMsgTrip", prop_transitMsgTrip)
+  , ("prop_transitAckTrip", prop_transitAckTrip)
   ]
 
