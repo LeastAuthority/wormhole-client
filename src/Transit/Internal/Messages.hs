@@ -61,7 +61,6 @@ instance FromJSON Hint where
 
 data ConnectionHint
   = Direct Hint
-  | Tor Hint
   | Relay { rtype :: AbilityV1
           , hints :: [Hint] }
   deriving (Eq, Show, Generic)

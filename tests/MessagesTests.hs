@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module MessagesTests
   ( tests
-  , abilitiesRoundTripTests
+  , messagesRoundTripTests
   )
 where
 
@@ -128,20 +128,26 @@ tests = hspec $ do
       encode a1 `shouldBe` "{\"ack\":\"ok\",\"sha256\":\"e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f\"}"
       decode (encode a1) `shouldBe` Just a1
 
-prop_AbilitiesTrip :: Property
-prop_AbilitiesTrip = property $ do
-  x <- forAll Generator.abilitiesGen
+prop_AbilityTrip :: Property
+prop_AbilityTrip = property $ do
+  x <- forAll Generator.abilityGen
   tripping x encode eitherDecode
 
-prop_HintsTrip :: Property
-prop_HintsTrip = property $ do
-  x <- forAll Generator.hintsGen
+prop_HintTrip :: Property
+prop_HintTrip = property $ do
+  x <- forAll Generator.hintGen
   tripping x encode eitherDecode
 
-abilitiesRoundTripTests :: IO Bool
-abilitiesRoundTripTests =
+prop_ConnectionHintTrip :: Property
+prop_ConnectionHintTrip = property $ do
+  x <- forAll Generator.connectionHintGen
+  tripping x encode eitherDecode
+
+messagesRoundTripTests :: IO Bool
+messagesRoundTripTests =
   checkSequential $ Group "Messages"
-  [ ("prop_AbilitiesTrip", prop_AbilitiesTrip)
-  , ("prop_HintsTrip", prop_HintsTrip)
+  [ ("prop_AbilityTrip", prop_AbilityTrip)
+  , ("prop_HintTrip", prop_HintTrip)
+  , ("prop_ConnectionHintTrip", prop_ConnectionHintTrip)
   ]
 
