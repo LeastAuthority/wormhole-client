@@ -79,6 +79,32 @@ completeWord wordlist = HC.completeWord Nothing "" completionFunc
       let completions = filter (toS word `Text.isPrefixOf`) wordlist
       return $ map (HC.simpleCompletion . toS) completions
 
+-- | Take an input code from the user with code completion.
+-- In order for the code completion to work, we need to find
+-- the possible open nameplates, the possible words and then
+-- do the completion as the user types the code.
+-- TODO: This function does too much. Perfect target for refactoring.
+getCode :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
+getCode session wordList = do
+  nameplates <- MagicWormhole.list session
+  let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
+  putText "Enter the receive wormhole code: "
+  code <- H.runInputT (settings (genPasscodes ns wordList)) getInput
+  return code
+  where
+    settings :: MonadIO m => [Text] -> H.Settings m
+    settings possibleWords = H.Settings
+      { H.complete = completeWord possibleWords
+      , H.historyFile = Nothing
+      , H.autoAddHistory = False
+      }
+    getInput :: H.InputT IO Text
+    getInput = do
+      minput <- H.getInputLine ""
+      case minput of
+        Nothing -> return ""
+        Just input -> return (toS input)
+
 main :: IO ()
 main = do
   options <- Opt.execParser opts
@@ -99,28 +125,15 @@ main = do
           -- TIO.putStrLn "file or directory transfers not supported yet"
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
       case maybeCode of
-        Nothing -> do -- generate code
-          nameplates <- MagicWormhole.list session
-          let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
-          putText "Enter the receive wormhole code: "
-          code <- H.runInputT (settings (genPasscodes ns wordList)) getInput
+        Nothing -> do -- get the code as a user input
+          code <- getCode session wordList
           message <- receiveText session code
           putStr message
         Just code -> do
+          -- if the sender is doing a file/dir transfer, it will send
+          -- the transit first. (Unfortunate!)
           message <- receiveText session code
           putStr message
   return ()
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
-      settings :: MonadIO m => [Text] -> H.Settings m
-      settings possibleWords = H.Settings
-        { H.complete = completeWord possibleWords
-        , H.historyFile = Nothing
-        , H.autoAddHistory = False
-        }
-      getInput :: H.InputT IO Text
-      getInput = do
-        minput <- H.getInputLine ""
-        case minput of
-          Nothing -> return ""
-          Just input -> return (toS input)
