@@ -29,7 +29,7 @@ import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Binary.Get (getWord32be, runGet)
 import Data.Hex (hex)
 import Data.Text (toLower)
-import System.Posix.Files (getFileStatus, fileSize)
+import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.Posix.Types (FileOffset)
 
 import Transit.Internal.Messages

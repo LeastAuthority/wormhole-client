@@ -35,7 +35,7 @@ library
                      , cryptonite
                      , spake2 >= 0.4
                      , text
-                     , unix
+                     , unix-compat
                      , network-info
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
