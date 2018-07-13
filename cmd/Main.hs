@@ -128,10 +128,10 @@ main = do
         Nothing -> do
           -- get the code as a user input
           code <- getCode session wordList
-          receive session code
+          receive session appID code
         Just code -> do
           -- if the sender is doing a file/dir transfer, it will send
           -- the transit first. (Unfortunate!)
-          receive session code
+          receive session appID code
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"

@@ -5,6 +5,7 @@ module Transit.Internal.Network
   , runTransitProtocol
   , sendBuffer
   , recvBuffer
+  , closeConnection
   , TCPEndpoint
   ) where
 
@@ -117,6 +118,10 @@ sendBuffer ep = send (sock ep)
 
 recvBuffer :: TCPEndpoint -> Int -> IO ByteString
 recvBuffer ep = recv (sock ep)
+
+closeConnection :: TCPEndpoint -> IO ()
+closeConnection ep = do
+  close (sock ep)
 
 runTransitProtocol :: [Ability] -> [ConnectionHint] -> (TCPEndpoint -> IO ()) -> IO ()
 runTransitProtocol as hs app = do

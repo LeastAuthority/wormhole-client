@@ -6,10 +6,13 @@ module Transit.Internal.Peer
   , makeReceiverRecordKey
   , transitExchange
   , offerExchange
-  , handshakeExchange
+  , senderHandshakeExchange
+  , receiverHandshakeExchange
   , sendRecords
-  , receiveAckMessage
   , sendTransitMsg
+  , receiveRecords
+  , sendGoodAckMessage
+  , receiveAckMessage
   )
 where
 
@@ -29,8 +32,9 @@ import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Binary.Get (getWord32be, runGet)
 import Data.Hex (hex)
 import Data.Text (toLower)
-import System.PosixCompat.Files (getFileStatus, fileSize)
+import System.PosixCompat.Files (getFileStatus, fileSize, rename)
 import System.Posix.Types (FileOffset)
+import System.IO (openTempFile, hClose)
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -141,22 +145,36 @@ offerExchange conn path = do
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
 
-handshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
-handshakeExchange ep key = do
-  (s, r) <- concurrently sendHandshake rxHandshake
+senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
+senderHandshakeExchange ep key = do
+  (_, r) <- concurrently sendHandshake rxHandshake
   if r == rHandshakeMsg
-    then
-    sendGo >> return ()
-    else
-    sendNeverMind >> return ()
-      where
-        sendHandshake = sendBuffer ep sHandshakeMsg
-        rxHandshake = recvBuffer ep (BS.length rHandshakeMsg)
-        sendGo = sendBuffer ep (toS @Text @ByteString "go\n")
-        sendNeverMind = sendBuffer ep (toS @Text @ByteString "nevermind\n")
-        sHandshakeMsg = makeSenderHandshake key
-        rHandshakeMsg = makeReceiverHandshake key
+    then sendGo >> return ()
+    else sendNeverMind >> closeConnection ep
+  where
+    sendHandshake = sendBuffer ep sHandshakeMsg
+    rxHandshake = recvByteString (BS.length rHandshakeMsg)
+    sendGo = sendBuffer ep (toS @Text @ByteString "go\n")
+    sendNeverMind = sendBuffer ep (toS @Text @ByteString "nevermind\n")
+    sHandshakeMsg = makeSenderHandshake key
+    rHandshakeMsg = makeReceiverHandshake key
+    recvByteString n = recvBuffer ep n
 
+receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
+receiverHandshakeExchange ep key = do
+  (_, r) <- concurrently sendHandshake rxHandshake
+  if r == sHandshakeMsg
+    then do
+    goMsg <- recvByteString (BS.length "go\n")
+    if goMsg == "go\n" then return () else closeConnection ep
+    else closeConnection ep
+  where
+    sendHandshake = sendBuffer ep rHandshakeMsg
+    rxHandshake = recvByteString (BS.length sHandshakeMsg)
+    sHandshakeMsg = makeSenderHandshake key
+    rHandshakeMsg = makeReceiverHandshake key
+    recvByteString n = recvBuffer ep n
+    
 receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Text Text)
 receiveAckMessage ep key = do
   ackBytes <- BL.fromStrict <$> receiveRecord ep key
@@ -165,19 +183,33 @@ receiveAckMessage ep key = do
                                     | otherwise -> return (Left "transit ack failure")
     Left s -> return (Left $ toS ("transit ack failure: " <> s))
 
+sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
+sendGoodAckMessage ep key sha256Sum = do
+  let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
+  sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
+
 type PlainText = ByteString
 type CipherText = ByteString
+
+sendRecord :: TCPEndpoint -> ByteString -> IO ()
+sendRecord ep record = do
+  -- send size of the encrypted payload as 4 bytes, then send record
+  -- format sz as a fixed 4 byte bytestring
+  let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
+  _ <- sendBuffer ep (toS payloadSize)
+  _ <- sendBuffer ep record
+  return ()
 
 -- | Given the record encryption key and a bytestream, chop
 -- the bytestream into blocks of 4096 bytes, encrypt them and
 -- send it to the given network endpoint. The length of the
 -- encrypted record is sent first, encoded as a 4-byte
 -- big-endian number. After that, the encrypted record itself
--- is sent. `sendRecords` returns the SHA256 hash of the encrypted
+-- is sent. `sendRecords` returns the SHA256 hash of the unencrypted
 -- file, which can be compared with the recipient's sha256 hash.
 sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO Text
 sendRecords ep key fileStream = do
-  forM_ records sendRecord
+  forM_ records (sendRecord ep)
   return $ show (sha256sum blocks)
   where
     records = go Saltine.zero blocks
@@ -193,32 +225,13 @@ sendRecords ep key fileStream = do
                      let (chunk, chunks) = BS.splitAt sz fileBS
                      in
                        chunk: chop sz chunks
-    sendRecord :: ByteString -> IO ()
-    sendRecord record = do
-      -- send size of the encrypted payload as 4 bytes, then send record
-      -- format sz as a fixed 4 byte bytestring
-      let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
-      _ <- sendBuffer ep (toS payloadSize)
-      _ <- sendBuffer ep record
-      return ()
-    sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
-    sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
-      where
-        hashBlocks :: Hash.Context Hash.SHA256 -> [ByteString] -> Hash.Digest Hash.SHA256
-        hashBlocks ctx [] = Hash.hashFinalize ctx
-        hashBlocks ctx (r:rs) = hashBlocks (Hash.hashUpdate ctx r) rs
 
-receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
-receiveRecord ep key = do
-  -- read 4 bytes that consists of length
-  -- read as much bytes specified by the length. That would be encrypted record
-  -- decrypt the record
-  lenBytes <- recvBuffer ep 4
-  let len = runGet getWord32be (BL.fromStrict lenBytes)
-  encRecord <- recvBuffer ep (fromIntegral len)
-  case decrypt key encRecord of
-    Left s -> panic s
-    Right pt -> return pt
+sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
+sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
+  where
+    hashBlocks :: Hash.Context Hash.SHA256 -> [ByteString] -> Hash.Digest Hash.SHA256
+    hashBlocks ctx [] = Hash.hashFinalize ctx
+    hashBlocks ctx (r:rs) = hashBlocks (Hash.hashUpdate ctx r) rs
 
 -- | encrypt the given chunk with the given secretbox key and nonce.
 -- Saltine's nonce seem represented as a big endian bytestring.
@@ -244,3 +257,34 @@ decrypt key ciphertext =
     case maybePlainText of
       Just pt -> Right pt
       Nothing -> Left "decription error"
+
+receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
+receiveRecord ep key = do
+  -- read 4 bytes that consists of length
+  -- read as much bytes specified by the length. That would be encrypted record
+  -- decrypt the record
+  lenBytes <- recvBuffer ep 4
+  let len = runGet getWord32be (BL.fromStrict lenBytes)
+  encRecord <- recvBuffer ep (fromIntegral len)
+  case decrypt key encRecord of
+    Left s -> panic s
+    Right pt -> return pt
+
+receiveRecords :: TCPEndpoint -> SecretBox.Key -> FilePath -> FileOffset -> IO ByteString
+receiveRecords ep key path size = do
+  -- TODO: in the case of an exception, close the handle, delete the tmp file.
+  -- create temp file
+  (tmpFileName, tHandle) <- openTempFile "." path
+  blocks <- go tHandle size key
+  rename tmpFileName path
+  hClose tHandle
+  return $ show (sha256sum blocks)
+    where
+      go :: Handle -> FileOffset -> SecretBox.Key -> IO [ByteString]
+      go handle 0 _ = hClose handle >> return []
+      go handle size key = do
+        block <- receiveRecord ep key
+        BS.hPut handle block
+        blocks <- go handle (toEnum (fromEnum size - BS.length block)) key
+        return (block:blocks)
+
