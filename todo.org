@@ -7,6 +7,7 @@
 ** handle ack message that the receiver of a file/dir transfer sends to the sender. (DONE)
    The ack message is of this form: {"ack": "ok", "sha256": "e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f"}
 
+** Tests (hedgehog round trip tests for json messages) (DONE)
 ** support for transit protocol for files.
 *** direct tcp connection
 **** Send (DONE)
@@ -14,9 +15,7 @@
 *** via relay
 **** Send
 **** Receive
-
 ** Setup CI system
-** Tests (hedgehog round trip tests for json messages)
 ** Integration tests with python app.
 ** Try to optimize the wordlist completion in receive (256*2 entry table instead of 256*256 entries)
 ** support for directory transfers via transit protocol.
