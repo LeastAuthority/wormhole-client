@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Transit.Internal.Network
   ( allocateTcpPort
   , buildDirectHints
@@ -7,6 +8,8 @@ module Transit.Internal.Network
   , recvBuffer
   , closeConnection
   , TCPEndpoint
+  , PortNumber
+  , ipv4ToHostname -- todo: remove
   ) where
 
 import Protolude
@@ -28,6 +31,8 @@ import Network.Socket
   , Socket(..)
   , connect
   , bind
+  , listen
+  , accept
   , defaultHints
   , defaultPort
   , setSocketOption
@@ -50,11 +55,11 @@ import System.Timeout
   )
 import qualified Control.Exception as E
 import qualified Data.Text.IO as TIO
-
+import Control.Concurrent.Async (race)
 
 allocateTcpPort :: IO PortNumber
-allocateTcpPort = E.bracket setup close socketPort
-  where setup = do
+allocateTcpPort = E.bracket start close socketPort
+  where start = do
           let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
           addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show defaultPort))
           sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
@@ -72,12 +77,16 @@ ipv4ToHostname ip =
   in
     show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
 
-buildDirectHints :: IO [ConnectionHint]
-buildDirectHints = do
-  portnum <- allocateTcpPort
+buildDirectHints :: PortNumber -> IO [ConnectionHint]
+buildDirectHints portnum = do
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
-        filter (\nwInterface -> let (IPv4 addr4) = ipv4 nwInterface in addr4 /= 0x0100007f) nwInterfaces
+        filter (\nwInterface ->
+                   let (IPv4 addr4) = ipv4 nwInterface
+                   in
+                     (ipv4ToHostname addr4 /= "0.0.0.0")
+                     && (ipv4ToHostname addr4 /= "127.0.0.1"))
+        nwInterfaces
   return $ map (\nwInterface ->
                   let (IPv4 addr4) = ipv4 nwInterface in
                   Direct Hint { hostname = ipv4ToHostname addr4
@@ -88,24 +97,30 @@ buildDirectHints = do
 
 data TCPEndpoint
   = TCPEndpoint
-  { chint :: ConnectionHint
-  , ability :: Ability
-  , sock :: Socket
-  } deriving (Show, Eq)
+    { sock :: Socket
+    } deriving (Show, Eq)
 
 tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
 tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
+  TIO.putStrLn ("connecting to " <> show host <> show portnum)
   addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   timeout 10000000 (do
-                       connect sock' $ addrAddress addr
-                       return $ TCPEndpoint h a sock')
+                       testAddress sock' $ addrAddress addr
+                       -- return $ TCPEndpoint h a sock'
+                       return $ TCPEndpoint sock')
   where
     resolve host' port' = do
       let hints' = defaultHints { addrSocketType = Stream }
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
+--    testAddress :: Socket -> SockAddr -> IO ()
+    testAddress sock addr = do
+      result <- try $ connect sock addr
+      case result of
+        Left (e :: E.SomeException) -> return ()
+        Right h -> return ()
 tryToConnect (Ability DirectTcpV1) _ = do
   TIO.putStrLn "Tor hints and Relays are not supported yet"
   return Nothing
@@ -123,16 +138,32 @@ closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = do
   close (sock ep)
 
-runTransitProtocol :: [Ability] -> [ConnectionHint] -> (TCPEndpoint -> IO ()) -> IO ()
-runTransitProtocol as hs app = do
+startServer :: PortNumber -> IO (TCPEndpoint)
+startServer port = do
+  let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
+  addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show port))
+  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  _ <- setSocketOption sock' ReuseAddr 1
+  _ <- bind sock' (addrAddress addr)
+  port <- socketPort sock'
+  TIO.putStrLn ("listening on port: " <> show port)
+  listen sock' 5
+  (sock'', peer) <- accept sock'
+  return (TCPEndpoint sock')
+
+runTransitProtocol :: [Ability] -> [ConnectionHint] -> PortNumber -> (TCPEndpoint -> IO ()) -> IO ()
+runTransitProtocol as hs port app = do
   -- establish the tcp connection with the peer/relay
   -- for each (hostname, port) pair in direct hints, try to establish connection
-  maybeEndPoint <- asum (map (\hint -> case hint of
-                                         Direct _ ->
-                                           tryToConnect (Ability DirectTcpV1) hint
-                                         _ -> return Nothing
-                             ) hs)
-  case maybeEndPoint of
-    Just ep -> app ep
-    Nothing -> return ()
-
+  TIO.putStrLn (show hs)
+  eitherEndPoint <- race left right
+  case eitherEndPoint of
+    Right (Just ep) -> app ep
+    Left ep -> app ep
+  where
+    left = startServer port
+    right = asum (map (\hint -> case hint of
+                                  Direct _ ->
+                                    tryToConnect (Ability DirectTcpV1) hint
+                                  _ -> return Nothing
+                      ) hs)

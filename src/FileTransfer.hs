@@ -45,7 +45,8 @@ sendFile session appid password printHelpFn filepath = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- exchange abilities
-        transitResp <- transitExchange conn
+        port <- allocateTcpPort
+        transitResp <- transitExchange conn port
         case transitResp of
           Left s -> panic s
           Right (Transit peerAbilities peerHints) -> do
@@ -55,7 +56,7 @@ sendFile session appid password printHelpFn filepath = do
             case offerResp of
               Left s -> panic s
               Right _ -> do
-                runTransitProtocol peerAbilities peerHints
+                runTransitProtocol peerAbilities peerHints port
                   (\endpoint -> do
                      -- 0. derive transit key
                      let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
@@ -99,7 +100,10 @@ receive session appid code = do
           Left err -> do
             case Aeson.eitherDecode (toS received) of
               Right t@(Transit peerAbilities peerHints) -> do
-                sendTransitMsg conn
+                let abilities' = [Ability DirectTcpV1]
+                port <- allocateTcpPort
+                hints' <- buildDirectHints port
+                sendTransitMsg conn abilities' hints'
                 -- now expect an offer message
                 MagicWormhole.PlainText offerMsg <- atomically $ MagicWormhole.receiveMessage conn
                 case Aeson.eitherDecode (toS offerMsg) of
@@ -111,7 +115,7 @@ receive session appid code = do
                     MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode ans)))
                     -- TODO: a tcp listener must be up and running at this point.
                     -- TCPEndpoint
-                    runTransitProtocol peerAbilities peerHints
+                    runTransitProtocol peerAbilities peerHints port
                       (\endpoint -> do
                           -- 0. derive transit key
                           let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)

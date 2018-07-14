@@ -25,6 +25,7 @@ library
                      , Transit.Internal.Messages
   build-depends:       base >=4.6 && <5
                      , bytestring
+                     , async
                      , aeson
                      , binary
                      , magic-wormhole

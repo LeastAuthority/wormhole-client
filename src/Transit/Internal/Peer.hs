@@ -92,9 +92,11 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-transitExchange :: MagicWormhole.EncryptedConnection -> IO (Either Text TransitMsg)
-transitExchange conn = do
-  (_, rxMsg) <- concurrently (sendTransitMsg conn) receiveTransitMsg
+transitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
+transitExchange conn port = do
+  let abilities' = [Ability DirectTcpV1]
+  hints' <- buildDirectHints port
+  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
     Left s -> return (Left (toS s))
@@ -106,13 +108,8 @@ transitExchange conn = do
       MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
       return responseMsg
 
-sendTransitMsg :: MagicWormhole.EncryptedConnection -> IO ()
-sendTransitMsg conn = do
-  -- create abilities
-  let abilities' = [Ability DirectTcpV1]
-  port' <- allocateTcpPort
-  hints' <- buildDirectHints
-
+sendTransitMsg :: MagicWormhole.EncryptedConnection -> [Ability] -> [ConnectionHint] -> IO ()
+sendTransitMsg conn abilities' hints' = do
   -- create transit message
   let txTransitMsg = Transit abilities' hints'
   let encodedTransitMsg = toS (encode txTransitMsg)
