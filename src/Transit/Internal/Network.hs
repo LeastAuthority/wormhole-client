@@ -9,7 +9,7 @@ module Transit.Internal.Network
   , closeConnection
   , TCPEndpoint
   , PortNumber
-  , ipv4ToHostname -- todo: remove
+  , startServer
   ) where
 
 import Protolude
@@ -103,7 +103,6 @@ data TCPEndpoint
 tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
 tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
-  TIO.putStrLn ("connecting to " <> show host <> show portnum)
   addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   timeout 10000000 (do
@@ -138,32 +137,32 @@ closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = do
   close (sock ep)
 
-startServer :: PortNumber -> IO (TCPEndpoint)
+startServer :: PortNumber -> IO TCPEndpoint
 startServer port = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show port))
+  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show port))
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   _ <- setSocketOption sock' ReuseAddr 1
   _ <- bind sock' (addrAddress addr)
   port <- socketPort sock'
-  TIO.putStrLn ("listening on port: " <> show port)
   listen sock' 5
   (sock'', peer) <- accept sock'
-  return (TCPEndpoint sock')
+  return (TCPEndpoint sock'')
 
-runTransitProtocol :: [Ability] -> [ConnectionHint] -> PortNumber -> (TCPEndpoint -> IO ()) -> IO ()
-runTransitProtocol as hs port app = do
+runTransitProtocol :: [Ability] -> [ConnectionHint] -> Async TCPEndpoint -> (TCPEndpoint -> IO ()) -> IO ()
+runTransitProtocol as hs serverAsync app = do
   -- establish the tcp connection with the peer/relay
   -- for each (hostname, port) pair in direct hints, try to establish connection
-  TIO.putStrLn (show hs)
-  eitherEndPoint <- race left right
-  case eitherEndPoint of
-    Right (Just ep) -> app ep
-    Left ep -> app ep
-  where
-    left = startServer port
-    right = asum (map (\hint -> case hint of
-                                  Direct _ ->
-                                    tryToConnect (Ability DirectTcpV1) hint
-                                  _ -> return Nothing
-                      ) hs)
+  maybeServerAccepted <- poll serverAsync
+  case maybeServerAccepted of
+    Nothing -> do
+      maybeEndPoint <- asum (map (\hint -> case hint of
+                                             Direct _ ->
+                                               tryToConnect (Ability DirectTcpV1) hint
+                                             _ -> return Nothing
+                                 ) hs)
+      case maybeEndPoint of
+        Just ep -> app ep
+        Nothing -> return ()
+    Just (Right ep) -> app ep
+    Just e -> panic ("exception :" <> (show e))
