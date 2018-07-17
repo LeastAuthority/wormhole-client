@@ -9,7 +9,7 @@ license:             GPL-3
 license-file:        LICENSE
 author:              Ramakrishnan Muthukrishnan
 maintainer:          ram@leastauthority.com
--- copyright:           
+copyright:           (c) 2018 Least Authority TFA Gmbh
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md
