@@ -85,13 +85,18 @@ sendFile session appid password printHelpFn filepath = do
         return ()
     )
 
-receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
-receive session appid code = do
+establishWormholeConnection :: MagicWormhole.Session -> Text -> IO MagicWormhole.Connection
+establishWormholeConnection session code = do
   -- establish the connection
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
   mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
-  peer <- MagicWormhole.open session mailbox
+  MagicWormhole.open session mailbox
+
+receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
+receive session appid code = do
+  -- establish the connection
+  peer <- establishWormholeConnection session code
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
     (\conn -> do
         -- unfortunately, the receiver has no idea which message to expect.
