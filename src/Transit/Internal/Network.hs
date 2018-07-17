@@ -55,7 +55,6 @@ import System.Timeout
   )
 import qualified Control.Exception as E
 import qualified Data.Text.IO as TIO
-import Control.Concurrent.Async (race)
 
 allocateTcpPort :: IO PortNumber
 allocateTcpPort = E.bracket start close socketPort
@@ -149,6 +148,12 @@ startServer port = do
   (sock'', peer) <- accept sock'
   return (TCPEndpoint sock'')
 
+data ConnectionError
+  = ConnectionError Text
+  deriving (Eq, Show)
+
+instance Exception ConnectionError
+
 runTransitProtocol :: [Ability] -> [ConnectionHint] -> Async TCPEndpoint -> (TCPEndpoint -> IO ()) -> IO ()
 runTransitProtocol as hs serverAsync app = do
   -- establish the tcp connection with the peer/relay
@@ -156,13 +161,16 @@ runTransitProtocol as hs serverAsync app = do
   maybeServerAccepted <- poll serverAsync
   case maybeServerAccepted of
     Nothing -> do
-      maybeEndPoint <- asum (map (\hint -> case hint of
-                                             Direct _ ->
-                                               tryToConnect (Ability DirectTcpV1) hint
-                                             _ -> return Nothing
-                                 ) hs)
-      case maybeEndPoint of
-        Just ep -> app ep
-        Nothing -> return ()
+      maybeClientEndPoint <- asum (map (\hint -> case hint of
+                                                   Direct _ ->
+                                                     tryToConnect (Ability DirectTcpV1) hint
+                                                   _ -> return Nothing
+                                       ) hs)
+      case maybeClientEndPoint of
+        Just ep -> do
+          -- kill server async
+          cancel serverAsync
+          app ep
+        Nothing -> throwIO (ConnectionError "Peer socket is not active")
     Just (Right ep) -> app ep
-    Just e -> panic ("exception :" <> (show e))
+    Just e -> panic (show e)
