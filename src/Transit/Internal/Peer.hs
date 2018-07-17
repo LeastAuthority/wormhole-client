@@ -36,6 +36,7 @@ import System.PosixCompat.Files (getFileStatus, fileSize, rename)
 import System.Posix.Types (FileOffset)
 import System.IO (openTempFile, hClose)
 import qualified Control.Exception as E
+import System.FilePath (takeFileName)
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -290,17 +291,20 @@ receiveRecords :: TCPEndpoint -> SecretBox.Key -> FilePath -> FileOffset -> IO B
 receiveRecords ep key path size = do
   -- TODO: in the case of an exception, close the handle, delete the tmp file.
   -- create temp file
-  (tmpFileName, tHandle) <- openTempFile "." path
-  blocks <- go tHandle size key
-  rename tmpFileName path
-  hClose tHandle
-  return $ show (sha256sum blocks)
-    where
-      go :: Handle -> FileOffset -> SecretBox.Key -> IO [ByteString]
-      go handle 0 _ = hClose handle >> return []
-      go handle size key = do
-        block <- receiveRecord ep key
-        BS.hPut handle block
-        blocks <- go handle (toEnum (fromEnum size - BS.length block)) key
-        return (block:blocks)
+  bracket
+    (openTempFile "./" (takeFileName path))
+    (\(name, handle) -> do
+        rename name (takeFileName path)
+        hClose handle)
+    (\(name, handle) -> do
+        blocks <- go handle size key
+        return $ show (sha256sum blocks))
+  where
+    go :: Handle -> FileOffset -> SecretBox.Key -> IO [ByteString]
+    go handle 0 _ = hClose handle >> return []
+    go handle size key = do
+      block <- receiveRecord ep key
+      BS.hPut handle block
+      blocks <- go handle (toEnum (fromEnum size - BS.length block)) key
+      return (block:blocks)
 

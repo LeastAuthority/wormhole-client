@@ -161,11 +161,7 @@ runTransitProtocol as hs serverAsync app = do
   maybeServerAccepted <- poll serverAsync
   case maybeServerAccepted of
     Nothing -> do
-      maybeClientEndPoint <- asum (map (\hint -> case hint of
-                                                   Direct _ ->
-                                                     tryToConnect (Ability DirectTcpV1) hint
-                                                   _ -> return Nothing
-                                       ) hs)
+      maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
       case maybeClientEndPoint of
         Just ep -> do
           -- kill server async

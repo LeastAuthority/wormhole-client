@@ -38,6 +38,7 @@ library
                      , text
                      , unix-compat
                      , network-info
+                     , filepath
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
   ghc-options: -Wall
