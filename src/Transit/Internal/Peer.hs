@@ -145,9 +145,12 @@ offerExchange conn path = do
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 senderHandshakeExchange ep key = do
   (_, r) <- concurrently sendHandshake rxHandshake
-  if r == rHandshakeMsg
-    then sendGo >> return ()
-    else sendNeverMind >> closeConnection ep
+  case r of
+    Left e -> throwIO e
+    Right res ->
+      if res == rHandshakeMsg
+      then sendGo >> return ()
+      else sendNeverMind >> closeConnection ep
   where
     sendHandshake = sendBuffer ep sHandshakeMsg
     rxHandshake = recvByteString (BS.length rHandshakeMsg)
@@ -160,11 +163,16 @@ senderHandshakeExchange ep key = do
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 receiverHandshakeExchange ep key = do
   (_, r) <- concurrently sendHandshake rxHandshake
-  if r == sHandshakeMsg
-    then do
-    goMsg <- recvByteString (BS.length "go\n")
-    if goMsg == "go\n" then return () else closeConnection ep
-    else closeConnection ep
+  case r of
+    Left e -> throwIO e
+    Right res ->
+      if res == sHandshakeMsg
+      then do
+        goMsg <- recvByteString (BS.length "go\n")
+        case goMsg of
+          Left e -> throwIO e
+          Right m -> if m == "go\n" then return () else closeConnection ep
+      else closeConnection ep
   where
     sendHandshake = sendBuffer ep rHandshakeMsg
     rxHandshake = recvByteString (BS.length sHandshakeMsg)
@@ -260,12 +268,18 @@ receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
   -- decrypt the record
-  lenBytes <- recvBuffer ep 4
-  let len = runGet getWord32be (BL.fromStrict lenBytes)
-  encRecord <- recvBuffer ep (fromIntegral len)
-  case decrypt key encRecord of
-    Left s -> panic s
-    Right pt -> return pt
+  res <- recvBuffer ep 4
+  case res of
+    Left e -> throwIO e
+    Right lenBytes -> do
+      let len = runGet getWord32be (BL.fromStrict lenBytes)
+      res <- recvBuffer ep (fromIntegral len)
+      case res of
+        Left e -> throwIO e
+        Right encRecord -> do
+          case decrypt key encRecord of
+            Left s -> panic s
+            Right pt -> return pt
 
 receiveRecords :: TCPEndpoint -> SecretBox.Key -> FilePath -> FileOffset -> IO ByteString
 receiveRecords ep key path size = do
