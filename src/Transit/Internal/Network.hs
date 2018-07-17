@@ -55,7 +55,6 @@ import System.Timeout
   )
 import qualified Control.Exception as E
 import qualified Data.Text.IO as TIO
-import Control.Concurrent.Async (race)
 
 allocateTcpPort :: IO PortNumber
 allocateTcpPort = E.bracket start close socketPort
@@ -94,14 +93,13 @@ buildDirectHints portnum = do
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
-
 data TCPEndpoint
   = TCPEndpoint
     { sock :: Socket
     } deriving (Show, Eq)
 
 tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)) =
+tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
   addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
@@ -115,11 +113,11 @@ tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
 --    testAddress :: Socket -> SockAddr -> IO ()
-    testAddress sock addr = do
-      result <- try $ connect sock addr
+    testAddress so addr = do
+      result <- try $ connect so addr
       case result of
-        Left (e :: E.SomeException) -> return ()
-        Right h -> return ()
+        Left (e :: E.SomeException) -> throwIO e
+        Right _ -> return ()
 tryToConnect (Ability DirectTcpV1) _ = do
   TIO.putStrLn "Tor hints and Relays are not supported yet"
   return Nothing
@@ -138,16 +136,21 @@ closeConnection ep = do
   close (sock ep)
 
 startServer :: PortNumber -> IO TCPEndpoint
-startServer port = do
+startServer portnum = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show port))
+  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show portnum))
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   _ <- setSocketOption sock' ReuseAddr 1
   _ <- bind sock' (addrAddress addr)
-  port <- socketPort sock'
   listen sock' 5
-  (sock'', peer) <- accept sock'
+  (sock'', _) <- accept sock'
   return (TCPEndpoint sock'')
+
+data ConnectionError
+  = ConnectionError Text
+  deriving (Eq, Show)
+
+instance Exception ConnectionError
 
 runTransitProtocol :: [Ability] -> [ConnectionHint] -> Async TCPEndpoint -> (TCPEndpoint -> IO ()) -> IO ()
 runTransitProtocol as hs serverAsync app = do
@@ -156,13 +159,12 @@ runTransitProtocol as hs serverAsync app = do
   maybeServerAccepted <- poll serverAsync
   case maybeServerAccepted of
     Nothing -> do
-      maybeEndPoint <- asum (map (\hint -> case hint of
-                                             Direct _ ->
-                                               tryToConnect (Ability DirectTcpV1) hint
-                                             _ -> return Nothing
-                                 ) hs)
-      case maybeEndPoint of
-        Just ep -> app ep
-        Nothing -> return ()
+      maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
+      case maybeClientEndPoint of
+        Just ep -> do
+          -- kill server async
+          cancel serverAsync
+          app ep
+        Nothing -> throwIO (ConnectionError "Peer socket is not active")
     Just (Right ep) -> app ep
-    Just e -> panic ("exception :" <> (show e))
+    Just e -> panic (show e)

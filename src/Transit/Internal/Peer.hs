@@ -5,7 +5,7 @@ module Transit.Internal.Peer
   , makeSenderRecordKey
   , makeReceiverRecordKey
   , transitExchange
-  , offerExchange
+  , senderOfferExchange
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendRecords
@@ -13,6 +13,8 @@ module Transit.Internal.Peer
   , receiveRecords
   , sendGoodAckMessage
   , receiveAckMessage
+  , receiveWormholeMessage
+  , sendWormholeMessage
   )
 where
 
@@ -35,6 +37,8 @@ import Data.Text (toLower)
 import System.PosixCompat.Files (getFileStatus, fileSize, rename)
 import System.Posix.Types (FileOffset)
 import System.IO (openTempFile, hClose)
+import qualified Control.Exception as E
+import System.FilePath (takeFileName)
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -93,9 +97,9 @@ makeReceiverRecordKey key =
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
 transitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-transitExchange conn port = do
+transitExchange conn portnum = do
   let abilities' = [Ability DirectTcpV1]
-  hints' <- buildDirectHints port
+  hints' <- buildDirectHints portnum
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
@@ -118,8 +122,8 @@ sendTransitMsg conn abilities' hints' = do
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
 
-offerExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
-offerExchange conn path = do
+senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
+senderOfferExchange conn path = do
   (_,rx) <- concurrently sendOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
@@ -142,6 +146,20 @@ offerExchange conn path = do
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
 
+receiveWormholeMessage :: MagicWormhole.EncryptedConnection -> IO ByteString
+receiveWormholeMessage conn = do
+  MagicWormhole.PlainText msg <- atomically $ MagicWormhole.receiveMessage conn
+  return msg
+
+sendWormholeMessage :: MagicWormhole.EncryptedConnection -> BL.ByteString -> IO ()
+sendWormholeMessage conn msg =
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS msg))
+
+data InvalidHandshake = InvalidHandshake
+  deriving (Show, Eq)
+
+instance E.Exception InvalidHandshake where
+
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 senderHandshakeExchange ep key = do
   (_, r) <- concurrently sendHandshake rxHandshake
@@ -162,23 +180,22 @@ senderHandshakeExchange ep key = do
 
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 receiverHandshakeExchange ep key = do
-  (_, r) <- concurrently sendHandshake rxHandshake
-  case r of
+  (_, r') <- concurrently sendHandshake rxHandshake
+  case r' of
     Left e -> throwIO e
-    Right res ->
-      if res == sHandshakeMsg
-      then do
-        goMsg <- recvByteString (BS.length "go\n")
-        case goMsg of
-          Left e -> throwIO e
-          Right m -> if m == "go\n" then return () else closeConnection ep
-      else closeConnection ep
-  where
-    sendHandshake = sendBuffer ep rHandshakeMsg
-    rxHandshake = recvByteString (BS.length sHandshakeMsg)
-    sHandshakeMsg = makeSenderHandshake key
-    rHandshakeMsg = makeReceiverHandshake key
-    recvByteString n = recvBuffer ep n
+    Right res | res == sHandshakeMsg -> do
+      r'' <- recvByteString (BS.length "go\n")
+      case r'' of
+        Left e -> throwIO e
+        Right m | m == "go\n" -> return ()
+                | otherwise -> throwIO InvalidHandshake
+    Right _ -> throwIO InvalidHandshake
+    where
+        sendHandshake = sendBuffer ep rHandshakeMsg
+        rxHandshake = recvByteString (BS.length sHandshakeMsg)
+        sHandshakeMsg = makeSenderHandshake key
+        rHandshakeMsg = makeReceiverHandshake key
+        recvByteString n = recvBuffer ep n
     
 receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Text Text)
 receiveAckMessage ep key = do
@@ -268,13 +285,13 @@ receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
   -- decrypt the record
-  res <- recvBuffer ep 4
-  case res of
+  resLen <- recvBuffer ep 4
+  case resLen of
     Left e -> throwIO e
     Right lenBytes -> do
       let len = runGet getWord32be (BL.fromStrict lenBytes)
-      res <- recvBuffer ep (fromIntegral len)
-      case res of
+      recBytes <- recvBuffer ep (fromIntegral len)
+      case recBytes of
         Left e -> throwIO e
         Right encRecord -> do
           case decrypt key encRecord of
@@ -285,17 +302,20 @@ receiveRecords :: TCPEndpoint -> SecretBox.Key -> FilePath -> FileOffset -> IO B
 receiveRecords ep key path size = do
   -- TODO: in the case of an exception, close the handle, delete the tmp file.
   -- create temp file
-  (tmpFileName, tHandle) <- openTempFile "." path
-  blocks <- go tHandle size key
-  rename tmpFileName path
-  hClose tHandle
-  return $ show (sha256sum blocks)
-    where
-      go :: Handle -> FileOffset -> SecretBox.Key -> IO [ByteString]
-      go handle 0 _ = hClose handle >> return []
-      go handle size key = do
-        block <- receiveRecord ep key
-        BS.hPut handle block
-        blocks <- go handle (toEnum (fromEnum size - BS.length block)) key
-        return (block:blocks)
+  bracket
+    (openTempFile "./" (takeFileName path))
+    (\(name, htemp) -> do
+        rename name (takeFileName path)
+        hClose htemp)
+    (\(_, htemp) -> do
+        blocks <- go htemp size
+        return $ show (sha256sum blocks))
+  where
+    go :: Handle -> FileOffset -> IO [ByteString]
+    go fp 0 = hClose fp >> return []
+    go fp remainingSize = do
+      block <- receiveRecord ep key
+      BS.hPut fp block
+      blocks <- go fp (toEnum (fromEnum remainingSize - BS.length block))
+      return (block:blocks)
 

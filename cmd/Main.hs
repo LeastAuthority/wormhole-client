@@ -112,26 +112,17 @@ main = do
   side <- MagicWormhole.generateSide
   let endpoint = relayEndpoint options
   case cmd options of
-    Send tfd -> MagicWormhole.runClient endpoint appID side $ \session ->
+    Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
+      password <- allocatePassword wordList
       case tfd of
-        TMsg msg -> do
-          -- text message
-          password <- allocatePassword wordList
-          sendText session (toS password) printSendHelpText msg
-        TFileOrDir filename -> do
-          -- file or dir
-          password <- allocatePassword wordList
+        TMsg msg -> sendText session (toS password) printSendHelpText msg
+        TFileOrDir filename ->
           sendFile session appID (toS password) printSendHelpText filename
-          -- TIO.putStrLn "file or directory transfers not supported yet"
-    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
-      case maybeCode of
-        Nothing -> do
-          -- get the code as a user input
-          code <- getCode session wordList
-          receive session appID code
-        Just code -> do
-          -- if the sender is doing a file/dir transfer, it will send
-          -- the transit first. (Unfortunate!)
-          receive session appID code
+    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
+      code <- getWormholeCode session wordList maybeCode
+      receive session appID code
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
+      getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
+      getWormholeCode session wordList Nothing = getCode session wordList
+      getWormholeCode _ _ (Just code) = return code
