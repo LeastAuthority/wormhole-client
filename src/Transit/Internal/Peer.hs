@@ -35,6 +35,7 @@ import Data.Text (toLower)
 import System.PosixCompat.Files (getFileStatus, fileSize, rename)
 import System.Posix.Types (FileOffset)
 import System.IO (openTempFile, hClose)
+import qualified Control.Exception as E
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -142,6 +143,11 @@ offerExchange conn path = do
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
 
+data InvalidHandshake = InvalidHandshake
+  deriving (Show, Eq)
+
+instance E.Exception InvalidHandshake where
+
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 senderHandshakeExchange ep key = do
   (_, r) <- concurrently sendHandshake rxHandshake
@@ -162,23 +168,22 @@ senderHandshakeExchange ep key = do
 
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 receiverHandshakeExchange ep key = do
-  (_, r) <- concurrently sendHandshake rxHandshake
-  case r of
+  (_, r') <- concurrently sendHandshake rxHandshake
+  case r' of
     Left e -> throwIO e
-    Right res ->
-      if res == sHandshakeMsg
-      then do
-        goMsg <- recvByteString (BS.length "go\n")
-        case goMsg of
-          Left e -> throwIO e
-          Right m -> if m == "go\n" then return () else closeConnection ep
-      else closeConnection ep
-  where
-    sendHandshake = sendBuffer ep rHandshakeMsg
-    rxHandshake = recvByteString (BS.length sHandshakeMsg)
-    sHandshakeMsg = makeSenderHandshake key
-    rHandshakeMsg = makeReceiverHandshake key
-    recvByteString n = recvBuffer ep n
+    Right res | res == sHandshakeMsg -> do
+      r'' <- recvByteString (BS.length "go\n")
+      case r'' of
+        Left e -> throwIO e
+        Right m | m == "go\n" -> return ()
+                | otherwise -> throwIO InvalidHandshake
+    Right _ -> throwIO InvalidHandshake
+    where
+        sendHandshake = sendBuffer ep rHandshakeMsg
+        rxHandshake = recvByteString (BS.length sHandshakeMsg)
+        sHandshakeMsg = makeSenderHandshake key
+        rHandshakeMsg = makeReceiverHandshake key
+        recvByteString n = recvBuffer ep n
     
 receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Text Text)
 receiveAckMessage ep key = do
