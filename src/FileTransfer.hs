@@ -68,10 +68,11 @@ sendFile session appid password printHelpFn filepath = do
                                let sRecordKey = makeSenderRecordKey transitKey
                                -- 3. send encrypted chunks of N bytes to the peer
                                txSha256Hash <- sendRecords endpoint sRecordKey fileBytes
-                               -- 4. TODO: read a record that should contain the transit Ack.
+                               -- 4. read a record that should contain the transit Ack.
                                --    If ack is not ok or the sha256sum is incorrect, flag an error.
                                let rRecordKey = makeReceiverRecordKey transitKey
                                rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                               closeConnection endpoint
                                case rxAckMsg of
                                  Right rxSha256Hash ->
                                    if txSha256Hash /= rxSha256Hash
@@ -138,8 +139,8 @@ receive session appid code = do
                                 sha256Sum <- receiveRecords endpoint sRecordKey name size
                                 TIO.putStrLn (toS sha256Sum)
                                 sendGoodAckMessage endpoint rRecordKey sha256Sum
-                                -- TODO: close listening and connecting sockets
-                                return ()
+                                -- close the connection
+                                closeConnection endpoint
                             )
                         Right _ -> panic $ "Could not decode message"
                   )
