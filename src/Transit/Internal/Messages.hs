@@ -42,7 +42,7 @@ instance FromJSON AbilityV1 where
 data Hint = Hint { ctype :: AbilityV1
                  , priority :: Double
                  , hostname :: Text
-                 , port :: Word16 }
+                 , portnum :: Word16 }
           deriving (Eq, Show, Generic)
 
 instance ToJSON Hint where

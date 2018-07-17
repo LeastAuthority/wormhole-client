@@ -5,7 +5,7 @@ module Transit.Internal.Peer
   , makeSenderRecordKey
   , makeReceiverRecordKey
   , transitExchange
-  , offerExchange
+  , senderOfferExchange
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendRecords
@@ -13,6 +13,8 @@ module Transit.Internal.Peer
   , receiveRecords
   , sendGoodAckMessage
   , receiveAckMessage
+  , receiveWormholeMessage
+  , sendWormholeMessage
   )
 where
 
@@ -120,8 +122,8 @@ sendTransitMsg conn abilities' hints' = do
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
 
-offerExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
-offerExchange conn path = do
+senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
+senderOfferExchange conn path = do
   (_,rx) <- concurrently sendOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
@@ -143,6 +145,15 @@ offerExchange conn path = do
       return rxFileOffer
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
+
+receiveWormholeMessage :: MagicWormhole.EncryptedConnection -> IO ByteString
+receiveWormholeMessage conn = do
+  MagicWormhole.PlainText msg <- atomically $ MagicWormhole.receiveMessage conn
+  return msg
+
+sendWormholeMessage :: MagicWormhole.EncryptedConnection -> BL.ByteString -> IO ()
+sendWormholeMessage conn msg =
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS msg))
 
 data InvalidHandshake = InvalidHandshake
   deriving (Show, Eq)

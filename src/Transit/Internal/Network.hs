@@ -77,7 +77,7 @@ ipv4ToHostname ip =
     show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
 
 buildDirectHints :: PortNumber -> IO [ConnectionHint]
-buildDirectHints portnum = do
+buildDirectHints port = do
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
         filter (\nwInterface ->
@@ -89,10 +89,9 @@ buildDirectHints portnum = do
   return $ map (\nwInterface ->
                   let (IPv4 addr4) = ipv4 nwInterface in
                   Direct Hint { hostname = ipv4ToHostname addr4
-                              , port = fromIntegral portnum
+                              , portnum = fromIntegral port
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
-
 
 data TCPEndpoint
   = TCPEndpoint
@@ -100,9 +99,9 @@ data TCPEndpoint
     } deriving (Show, Eq)
 
 tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)) =
+tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host port)) =
   withSocketsDo $ do
-  addr <- resolve (toS host) (show portnum)
+  addr <- resolve (toS host) (show port)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   timeout 10000000 (do
                        testAddress sock' $ addrAddress addr
@@ -114,11 +113,11 @@ tryToConnect a@(Ability DirectTcpV1) h@(Direct (Hint DirectTcpV1 _ host portnum)
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
 --    testAddress :: Socket -> SockAddr -> IO ()
-    testAddress sock addr = do
-      result <- try $ connect sock addr
+    testAddress so addr = do
+      result <- try $ connect so addr
       case result of
-        Left (e :: E.SomeException) -> return ()
-        Right h -> return ()
+        Left (e :: E.SomeException) -> throwIO e
+        Right _ -> return ()
 tryToConnect (Ability DirectTcpV1) _ = do
   TIO.putStrLn "Tor hints and Relays are not supported yet"
   return Nothing
@@ -143,9 +142,8 @@ startServer port = do
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   _ <- setSocketOption sock' ReuseAddr 1
   _ <- bind sock' (addrAddress addr)
-  port <- socketPort sock'
   listen sock' 5
-  (sock'', peer) <- accept sock'
+  (sock'', _) <- accept sock'
   return (TCPEndpoint sock'')
 
 data ConnectionError
