@@ -1,4 +1,4 @@
-[![Circle CI](https://circleci.com/gh/vu3rdd/wormhole-client/tree/receive.png?circle-token=98e29d106176da58957f91ae408fb6499421be14)](https://circleci.com/gh/vu3rdd/wormhole-client)
+[![Circle CI](https://circleci.com/gh/vu3rdd/wormhole-client/tree/receive.png?ghtoken=98e29d106176da58957f91ae408fb6499421be14)](https://circleci.com/gh/vu3rdd/wormhole-client)
 
 # A magic-wormhole client in Haskell
 
