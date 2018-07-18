@@ -46,7 +46,7 @@ library
                      , filepath
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror=incomplete-patterns
 
 executable hwormhole-exe
   main-is:             Main.hs
@@ -68,14 +68,14 @@ executable hwormhole-exe
   hs-source-dirs:      cmd
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror=incomplete-patterns
 
 test-suite hwormhole-tests
   type:               exitcode-stdio-1.0
   main-is:            Main.hs
   hs-source-dirs:     tests
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror=incomplete-patterns
   build-depends:      base >=4.6 && <5
                     , aeson >=1.4 && <2
                     , protolude
