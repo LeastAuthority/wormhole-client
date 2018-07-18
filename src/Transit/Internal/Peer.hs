@@ -285,13 +285,13 @@ receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
   -- decrypt the record
-  res <- recvBuffer ep 4
-  case res of
+  resLen <- recvBuffer ep 4
+  case resLen of
     Left e -> throwIO e
     Right lenBytes -> do
       let len = runGet getWord32be (BL.fromStrict lenBytes)
-      res <- recvBuffer ep (fromIntegral len)
-      case res of
+      recBytes <- recvBuffer ep (fromIntegral len)
+      case recBytes of
         Left e -> throwIO e
         Right encRecord -> do
           case decrypt key encRecord of
@@ -304,18 +304,18 @@ receiveRecords ep key path size = do
   -- create temp file
   bracket
     (openTempFile "./" (takeFileName path))
-    (\(name, handle) -> do
+    (\(name, htemp) -> do
         rename name (takeFileName path)
-        hClose handle)
-    (\(name, handle) -> do
-        blocks <- go handle size key
+        hClose htemp)
+    (\(_, htemp) -> do
+        blocks <- go htemp size
         return $ show (sha256sum blocks))
   where
-    go :: Handle -> FileOffset -> SecretBox.Key -> IO [ByteString]
-    go handle 0 _ = hClose handle >> return []
-    go handle size key = do
+    go :: Handle -> FileOffset -> IO [ByteString]
+    go fp 0 = hClose fp >> return []
+    go fp remainingSize = do
       block <- receiveRecord ep key
-      BS.hPut handle block
-      blocks <- go handle (toEnum (fromEnum size - BS.length block)) key
+      BS.hPut fp block
+      blocks <- go fp (toEnum (fromEnum remainingSize - BS.length block))
       return (block:blocks)
 
