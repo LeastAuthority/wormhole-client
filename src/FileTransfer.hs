@@ -45,10 +45,10 @@ sendFile session appid password printHelpFn filepath = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
         -- exchange abilities
-        port <- allocateTcpPort
-        _ <- withAsync (startServer port)
+        portnum <- allocateTcpPort
+        _ <- withAsync (startServer portnum)
              (\asyncServer -> do
-                 transitResp <- transitExchange conn port
+                 transitResp <- transitExchange conn portnum
                  case transitResp of
                    Left s -> panic s
                    Right (Transit peerAbilities peerHints) -> do
@@ -108,9 +108,9 @@ receive session appid code = do
               Left err -> panic (show err)
               Right (Transit peerAbilities peerHints) -> do
                 let abilities' = [Ability DirectTcpV1]
-                port <- allocateTcpPort
-                hints' <- buildDirectHints port
-                withAsync (startServer port)
+                portnum <- allocateTcpPort
+                hints' <- buildDirectHints portnum
+                withAsync (startServer portnum)
                   (\asyncServer -> do
                       sendTransitMsg conn abilities' hints'
                       -- now expect an offer message

@@ -77,7 +77,7 @@ ipv4ToHostname ip =
     show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
 
 buildDirectHints :: PortNumber -> IO [ConnectionHint]
-buildDirectHints port = do
+buildDirectHints portnum = do
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
         filter (\nwInterface ->
@@ -89,7 +89,7 @@ buildDirectHints port = do
   return $ map (\nwInterface ->
                   let (IPv4 addr4) = ipv4 nwInterface in
                   Direct Hint { hostname = ipv4ToHostname addr4
-                              , portnum = fromIntegral port
+                              , port = fromIntegral portnum
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
@@ -99,9 +99,9 @@ data TCPEndpoint
     } deriving (Show, Eq)
 
 tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host port)) =
+tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
-  addr <- resolve (toS host) (show port)
+  addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   timeout 10000000 (do
                        testAddress sock' $ addrAddress addr
@@ -136,9 +136,9 @@ closeConnection ep = do
   close (sock ep)
 
 startServer :: PortNumber -> IO TCPEndpoint
-startServer port = do
+startServer portnum = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show port))
+  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show portnum))
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   _ <- setSocketOption sock' ReuseAddr 1
   _ <- bind sock' (addrAddress addr)
