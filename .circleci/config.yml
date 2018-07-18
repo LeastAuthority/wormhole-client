@@ -32,20 +32,16 @@ jobs:
              apt-get --quiet --yes install git pkg-config libsodium-dev
 
       - run:
-          name: "install haskell-magic-wormhole from git"
+          name: "clone haskell-magic-wormhole from git"
           command: |
             git clone https://github.com/LeastAuthority/haskell-magic-wormhole
             cd haskell-magic-wormhole
-            cabal sandbox init
-            cabal update
-            cabal install --only-dependencies --disable-tests
-            cabal build
-            cabal install
 
       - run:
           name: "Build"
           command: |
             cabal sandbox init
+            cabal sandbox add-source ./haskell-magic-wormhole
             cabal install --only-dependencies --enable-tests
             cabal build
 
