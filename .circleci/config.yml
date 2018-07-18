@@ -39,8 +39,8 @@ jobs:
             apt-get --quiet --yes install git
 
       - run:
-        name: "install haskell-magic-wormhole from git"
-        command: |
+         name: "install haskell-magic-wormhole from git"
+         command: |
             git clone https://github.com/LeastAuthority/haskell-magic-wormhole
             cd haskell-magic-wormhole
             cabal sandbox init
