@@ -46,9 +46,9 @@ jobs:
             - "/root/.cabal"
 
       - run:
-          name: "install git"
+          name: "install dependencies"
           command: |
-             apt-get --quiet --yes install git
+             apt-get --quiet --yes install git pkg-config libsodium-dev
 
       - run:
           name: "install haskell-magic-wormhole from git"
