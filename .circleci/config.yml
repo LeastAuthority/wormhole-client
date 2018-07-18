@@ -41,6 +41,7 @@ jobs:
           name: "Build"
           command: |
             cabal update
+            cabal install happy alex
             cabal sandbox init
             cabal sandbox add-source ./haskell-magic-wormhole
             cabal install --only-dependencies --enable-tests
