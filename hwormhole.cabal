@@ -3,8 +3,8 @@
 
 name:                hwormhole
 version:             0.1.0.1
-synopsis:            A magic-wormhole client
--- description:         
+synopsis:            magic-wormhole client
+description:         A secure way to send files over the Internet using the magic-wormhole protocol
 license:             GPL-3
 license-file:        LICENSE
 author:              Ramakrishnan Muthukrishnan
