@@ -32,12 +32,12 @@ jobs:
             cabal install cabal-install
             cabal install hlint
 
-      - run
+      - run:
          name: "install git"
          command: |
             apt-get --quiet --yes install git
 
-      - run
+      - run:
         name: "install haskell-magic-wormhole from git"
         command: |
             git clone https://github.com/LeastAuthority/haskell-magic-wormhole
