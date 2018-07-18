@@ -24,7 +24,7 @@ jobs:
           name: "Install Cabal"
           command: |
             apt-get --quiet update
-            apt-get --quiet --yes install cabal-install
+            apt-get --quiet --yes install cabal-install zlib1g zlib1g-dev
 
       - run:
           name: "Upgrading Cabal"
