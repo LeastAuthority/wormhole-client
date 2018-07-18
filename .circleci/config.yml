@@ -10,11 +10,11 @@ workflows:
       - "ubuntu-18.04"
 
 jobs:
-  build:
+  ubuntu-18.04:
     branches:
       only:
         - circleci
-  ubuntu-18.04:
+
     docker:
       - image: "ubuntu:18.04"
 
