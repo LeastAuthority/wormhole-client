@@ -23,7 +23,7 @@ library
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.6 && <5
                      , bytestring
                      , aeson
                      , binary
@@ -47,7 +47,7 @@ executable hwormhole-exe
                      , Helper
                      , Options
   -- other-extensions:
-  build-depends:       base >=4.11 && <4.12
+  build-depends:       base >=4.6 && <5
                      , bytestring
                      , aeson
                      , binary
@@ -70,7 +70,7 @@ test-suite hwormhole-tests
   hs-source-dirs:     tests
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
   ghc-options: -Wall
-  build-depends:      base >=4.11 && <4.12
+  build-depends:      base >=4.6 && <5
                     , aeson
                     , protolude
                     , hspec

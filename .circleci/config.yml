@@ -1,0 +1,55 @@
+# https://circleci.com/docs/2.0/
+
+version: 2
+workflows:
+  version: 2
+
+  ci:
+    jobs:
+      # Platforms
+      - "ubuntu-18.04"
+
+jobs:
+  ubuntu-18.04:
+    docker:
+      - image: "ubuntu:18.04"
+
+    environment:
+      # Add /root/.cabal/bin to PATH so that the upgraded cabal is preferred.
+      PATH: "/root/.cabal/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    steps:
+      - checkout
+      - run:
+          name: "Install Cabal"
+          command: |
+            apt-get --quiet update
+            apt-get --quiet --yes install cabal-install zlib1g zlib1g-dev
+
+      - run:
+          name: "install dependencies"
+          command: |
+             apt-get --quiet --yes install git pkg-config libsodium-dev
+
+      - run:
+          name: "clone haskell-magic-wormhole from git"
+          command: |
+            git clone https://github.com/LeastAuthority/haskell-magic-wormhole
+            cd haskell-magic-wormhole
+
+      - run:
+          name: "Build"
+          command: |
+            cabal update
+            cabal install happy alex
+            cabal sandbox init
+            cabal sandbox add-source ./haskell-magic-wormhole
+            cabal install --only-dependencies --enable-tests
+            cabal build
+
+      - run:
+          name: "Test"
+          command: |
+            export LC_ALL=C.UTF-8
+            cabal test
+
