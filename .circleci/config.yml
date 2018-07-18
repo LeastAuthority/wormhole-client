@@ -49,7 +49,5 @@ jobs:
       - run:
           name: "Test"
           command: |
-            cabal new-test
+            cabal test
 
-      - store_test_results:
-          path: "./test-results"
