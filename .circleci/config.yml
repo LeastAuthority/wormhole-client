@@ -1,0 +1,61 @@
+# https://circleci.com/docs/2.0/
+
+version: 2
+workflows:
+  version: 2
+
+  ci:
+    jobs:
+      # Platforms
+      - "ubuntu-18.04"
+
+jobs:
+  ubuntu-18.04:
+    docker:
+      - image: "ubuntu:18.04"
+
+    environment:
+      # Add /root/.cabal/bin to PATH so that the upgraded cabal is preferred.
+      PATH: "/root/.cabal/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    steps:
+      - checkout
+      - run:
+          name: "Install Cabal"
+          command: |
+            apt-get --quiet update
+            apt-get --quiet --yes install cabal-install
+
+      - run:
+          name: "Upgrading Cabal"
+          command: |
+            cabal install cabal-install
+            cabal install hlint
+
+      - run
+         name: "install git"
+         command: |
+            apt-get --quiet --yes install git
+
+      - run
+        name: "install haskell-magic-wormhole from git"
+        command: |
+            git clone https://github.com/LeastAuthority/haskell-magic-wormhole
+            cd haskell-magic-wormhole
+            cabal sandbox init
+            cabal install --only-dependencies --disable-tests
+            cabal build
+            cabal install
+
+      - run:
+          name: "Build"
+          command: |
+            cabal new-build hwormhole
+
+      - run:
+          name: "Test"
+          command: |
+            cabal new-test
+
+      - store_test_results:
+          path: "./test-results"
