@@ -26,25 +26,6 @@ jobs:
             apt-get --quiet update
             apt-get --quiet --yes install cabal-install zlib1g zlib1g-dev
 
-      - restore_cache:
-           keys:
-            - v1-cabal-installation
-
-      - run:
-          name: "Upgrading Cabal"
-          command: |
-            cabal update
-            cabal install cabal-install
-            cabal install alex
-            cabal install happy
-            cabal install hlint
-
-      - save_cache:
-          name: "caching cabal 2.2 and hlint installations"
-          key: v1-cabal-installation
-          paths:
-            - "/root/.cabal"
-
       - run:
           name: "install dependencies"
           command: |
@@ -64,7 +45,9 @@ jobs:
       - run:
           name: "Build"
           command: |
-            cabal new-build hwormhole
+            cabal sandbox init
+            cabal install --only-dependencies --enable-tests
+            cabal build
 
       - run:
           name: "Test"
