@@ -1,3 +1,5 @@
+[![Circle CI](https://circleci.com/gh/vu3rdd/wormhole-client.svg?style=svg)](https://circleci.com/gh/vu3rdd/wormhole-client)
+
 # A magic-wormhole client in Haskell
 
 `hwormhole` is a haskell version of Brian Warner's [magic-wormhole][1] file
