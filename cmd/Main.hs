@@ -31,7 +31,6 @@ import qualified Options.Applicative as Opt
 import qualified MagicWormhole
 
 import Paths_hwormhole
-import Helper
 import Options
 import FileTransfer
 import TextMessages
@@ -104,6 +103,13 @@ getCode session wordList = do
       case minput of
         Nothing -> return ""
         Just input -> return (toS input)
+
+printSendHelpText :: Text -> IO ()
+printSendHelpText passcode = do
+  TIO.putStrLn $  "Wormhole code is: " <> passcode
+  TIO.putStrLn "On the other computer, please run:"
+  TIO.putStrLn ""
+  TIO.putStrLn $ "wormhole receive " <> passcode
 
 main :: IO ()
 main = do

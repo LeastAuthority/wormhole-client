@@ -50,7 +50,6 @@ library
 executable hwormhole-exe
   main-is:             Main.hs
   other-modules:       Paths_hwormhole
-                     , Helper
                      , Options
   -- other-extensions:
   build-depends:       base >=4.6 && <5
