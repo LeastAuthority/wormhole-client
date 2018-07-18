@@ -97,9 +97,9 @@ makeReceiverRecordKey key =
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
 transitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-transitExchange conn port = do
+transitExchange conn portnum = do
   let abilities' = [Ability DirectTcpV1]
-  hints' <- buildDirectHints port
+  hints' <- buildDirectHints portnum
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
