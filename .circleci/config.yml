@@ -26,6 +26,10 @@ jobs:
             apt-get --quiet update
             apt-get --quiet --yes install cabal-install zlib1g zlib1g-dev
 
+      - restore_cache:
+           keys:
+            - v1-cabal-installation
+
       - run:
           name: "Upgrading Cabal"
           command: |
@@ -35,17 +39,24 @@ jobs:
             cabal install happy
             cabal install hlint
 
-      - run:
-         name: "install git"
-         command: |
-            apt-get --quiet --yes install git
+      - save_cache:
+          name: "caching cabal 2.2 and hlint installations"
+          key: v1-cabal-installation
+          paths:
+            - "/root/.cabal"
 
       - run:
-         name: "install haskell-magic-wormhole from git"
-         command: |
+          name: "install git"
+          command: |
+             apt-get --quiet --yes install git
+
+      - run:
+          name: "install haskell-magic-wormhole from git"
+          command: |
             git clone https://github.com/LeastAuthority/haskell-magic-wormhole
             cd haskell-magic-wormhole
             cabal sandbox init
+            cabal update
             cabal install --only-dependencies --disable-tests
             cabal build
             cabal install
