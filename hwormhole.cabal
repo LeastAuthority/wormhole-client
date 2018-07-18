@@ -16,6 +16,10 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 data-files:          wordlist.txt
 
+source-repository head
+  type: git
+  location: https://github.com/LeastAuthority/wormhole-client
+
 library
   hs-source-dirs:      src
   exposed-modules:     FileTransfer
