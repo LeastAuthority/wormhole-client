@@ -11,10 +11,6 @@ workflows:
 
 jobs:
   ubuntu-18.04:
-    branches:
-      only:
-        - circleci
-
     docker:
       - image: "ubuntu:18.04"
 
