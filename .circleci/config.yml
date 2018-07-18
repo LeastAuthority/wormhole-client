@@ -31,6 +31,8 @@ jobs:
           command: |
             cabal update
             cabal install cabal-install
+            cabal install alex
+            cabal install happy
             cabal install hlint
 
       - run:
