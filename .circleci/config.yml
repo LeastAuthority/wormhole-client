@@ -40,6 +40,7 @@ jobs:
       - run:
           name: "Build"
           command: |
+            cabal update
             cabal sandbox init
             cabal sandbox add-source ./haskell-magic-wormhole
             cabal install --only-dependencies --enable-tests
