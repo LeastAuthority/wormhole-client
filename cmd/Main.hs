@@ -87,8 +87,7 @@ getCode session wordList = do
   nameplates <- MagicWormhole.list session
   let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
   putText "Enter the receive wormhole code: "
-  code <- H.runInputT (settings (genPasscodes ns wordList)) getInput
-  return code
+  H.runInputT (settings (genPasscodes ns wordList)) getInput
   where
     settings :: MonadIO m => [Text] -> H.Settings m
     settings possibleWords = H.Settings
