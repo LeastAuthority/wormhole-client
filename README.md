@@ -25,7 +25,7 @@ The build steps using the cabal project (supported in cabal 2.x) is as follows:
 1. create a top level directory called `wormhole`
 2. `cd wormhole`
 3. `git clone https://github.com/LeastAuthority/haskell-magic-wormhole`
-4. `git clone https://github.com/vu3rdd/wormhole-client`
+4. `git clone https://github.com/LeastAuthority/wormhole-client`
 5. create a file called `cabal.project` that has just one line:
 ```
 packages: wormhole-client haskell-magic-wormhole
