@@ -15,6 +15,9 @@ import qualified Crypto.Spake2 as Spake2
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 import qualified Data.Aeson as Aeson
+import System.FilePath (takeFileName)
+import System.IO (openTempFile, hClose)
+import System.PosixCompat.Files (rename)
 
 import qualified MagicWormhole
 
@@ -136,9 +139,11 @@ receive session appid code = do
                                 -- 3. receive and decrypt records (length followed by length
                                 --    sized packets). Also keep track of decrypted size in
                                 --    order to know when to send the file ack at the end.
-                                sha256Sum <- receiveRecords endpoint sRecordKey name size
-                                TIO.putStrLn (toS sha256Sum)
-                                sendGoodAckMessage endpoint rRecordKey sha256Sum
+                                decRecords <- receiveRecords endpoint sRecordKey (fromIntegral size)
+                                writeRecordsToFile name decRecords
+                                let sha256' = sha256sum decRecords
+                                TIO.putStrLn (show sha256')
+                                sendGoodAckMessage endpoint rRecordKey (show sha256')
                                 -- close the connection
                                 closeConnection endpoint
                             )
@@ -147,3 +152,11 @@ receive session appid code = do
               Right _ -> panic $ "Could not decode message"
     )
 
+writeRecordsToFile :: FilePath -> [ByteString] -> IO ()
+writeRecordsToFile path records = do
+  bracket
+    (openTempFile "./" (takeFileName path))
+    (\(name, htemp) -> do
+        rename name (takeFileName path)
+        hClose htemp)
+    (\(_, htemp) -> BS.hPut htemp (BS.concat records))
