@@ -132,8 +132,7 @@ recvBuffer :: TCPEndpoint -> Int -> IO (Either IOException ByteString)
 recvBuffer ep = try . recv (sock ep)
 
 closeConnection :: TCPEndpoint -> IO ()
-closeConnection ep = do
-  close (sock ep)
+closeConnection ep = close (sock ep)
 
 startServer :: PortNumber -> IO TCPEndpoint
 startServer portnum = do

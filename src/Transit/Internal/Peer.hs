@@ -229,12 +229,12 @@ sendRecord ep record = do
 -- is sent. `sendRecords` returns the SHA256 hash of the unencrypted
 -- file, which can be compared with the recipient's sha256 hash.
 sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO Text
-sendRecords ep key fileStream = do
+sendRecords ep key bytes = do
   forM_ records (sendRecord ep)
   return $ show (sha256sum blocks)
   where
     records = go Saltine.zero blocks
-    blocks = chop 4096 fileStream
+    blocks = chop 4096 bytes
     go :: SecretBox.Nonce -> [PlainText] -> [CipherText]
     go _ [] = []
     go nonce (chunk:restOfFile) =

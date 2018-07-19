@@ -1,5 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FileTransfer
@@ -60,7 +58,7 @@ sendFile session appid password printHelpFn filepath = do
                      fileBytes <- BS.readFile filepath
                      case offerResp of
                        Left s -> panic s
-                       Right _ -> do
+                       Right _ ->
                          runTransitProtocol peerAbilities peerHints asyncServer
                            (\endpoint -> do
                                -- 0. derive transit key
@@ -78,9 +76,8 @@ sendFile session appid password printHelpFn filepath = do
                                closeConnection endpoint
                                case rxAckMsg of
                                  Right rxSha256Hash ->
-                                   if txSha256Hash /= rxSha256Hash
-                                   then panic "sha256 mismatch"
-                                   else return ()
+                                   when (txSha256Hash /= rxSha256Hash) $
+                                   panic "sha256 mismatch"
                                  Left e -> panic e
                            )
                    Right _ -> panic "error sending transit message"
@@ -106,7 +103,7 @@ receive session appid code = do
           Right (MagicWormhole.Message message) -> TIO.putStrLn message
           Right (MagicWormhole.File _ _) -> panic "did not expect a file offer"
           -- ok, we received the Transit Message, send back a transit message
-          Left _ -> do
+          Left _ ->
             case Aeson.eitherDecode (toS received) of
               Left err -> panic (show err)
               Right (Transit peerAbilities peerHints) -> do
@@ -119,7 +116,7 @@ receive session appid code = do
                       -- now expect an offer message
                       offerMsg <- receiveWormholeMessage conn
                       case Aeson.eitherDecode (toS offerMsg) of
-                        Left err -> panic ("unable to decode offer msg" <> (show err))
+                        Left err -> panic ("unable to decode offer msg" <> show err)
                         Right (MagicWormhole.File name size) -> do
                           -- TODO: if the file already exist in the current dir, abort
                           -- send an answer message with file_ack.
@@ -147,13 +144,13 @@ receive session appid code = do
                                 -- close the connection
                                 closeConnection endpoint
                             )
-                        Right _ -> panic $ "Could not decode message"
+                        Right _ -> panic "Could not decode message"
                   )
               Right _ -> panic $ "Could not decode message"
     )
 
 writeRecordsToFile :: FilePath -> [ByteString] -> IO ()
-writeRecordsToFile path records = do
+writeRecordsToFile path records =
   bracket
     (openTempFile "./" (takeFileName path))
     (\(name, htemp) -> do
