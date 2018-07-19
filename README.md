@@ -65,3 +65,7 @@ on freenode with handle `rkrishnan`.
 [1]: https://github.com/warner/magic-wormhole
 [2]: https://github.com/LeastAuthority/haskell-magic-wormhole
 [3]: https://github.com/vu3rdd
+
+## Thanks
+
+We wish to thank NLnet Foundation for a grant that enabled us to work on this project.
