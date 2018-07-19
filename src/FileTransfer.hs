@@ -50,7 +50,7 @@ send session appid password printHelpFn tfd = do
   let (MagicWormhole.Nameplate n) = nameplate
   printHelpFn $ toS n <> "-" <> toS password
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
-    (\conn -> do
+    (\conn ->
         case tfd of
           TMsg msg -> do
             let offer = MagicWormhole.Message msg
