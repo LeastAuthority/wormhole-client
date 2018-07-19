@@ -17,7 +17,6 @@ import qualified Data.Aeson as Aeson
 import System.FilePath (takeFileName)
 import System.IO (openTempFile, hClose)
 import System.PosixCompat.Files (rename)
-import System.Posix.Types (FileOffset)
 
 import qualified MagicWormhole
 
