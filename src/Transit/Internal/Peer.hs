@@ -21,23 +21,23 @@ where
 
 import Protolude
 
-import Data.Aeson (encode, eitherDecode)
-import qualified Crypto.KDF.HKDF as HKDF
+import qualified Control.Exception as E
 import Crypto.Hash (SHA256(..))
-import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
-import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Hash as Hash
+import qualified Crypto.KDF.HKDF as HKDF
+import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import Crypto.Saltine.Internal.ByteSizes (boxNonce)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as BL
-import Data.ByteString.Builder(toLazyByteString, word32BE)
+import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
+import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
+import qualified Data.ByteString as BS
+import Data.ByteString.Builder(toLazyByteString, word32BE)
+import qualified Data.ByteString.Lazy as BL
 import Data.Hex (hex)
 import Data.Text (toLower)
-import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.Posix.Types (FileOffset)
-import qualified Control.Exception as E
+import System.PosixCompat.Files (getFileStatus, fileSize)
 
 import Transit.Internal.Messages
 import Transit.Internal.Network

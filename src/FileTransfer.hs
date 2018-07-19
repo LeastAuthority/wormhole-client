@@ -3,17 +3,17 @@
 module FileTransfer
   ( send
   , receive
-  , TransferType(..)
+  , MessageType(..)
   )
 where
 
 import Protolude
 
-import qualified Data.ByteString as BS
 import qualified Crypto.Spake2 as Spake2
+import qualified Data.Aeson as Aeson
+import qualified Data.ByteString as BS
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
-import qualified Data.Aeson as Aeson
 import System.FilePath (takeFileName)
 import System.IO (openTempFile, hClose)
 import System.PosixCompat.Files (rename)
@@ -26,7 +26,7 @@ import Transit.Internal.Messages
 
 type Password = ByteString
 
-data TransferType
+data MessageType
   = TMsg Text
   | TFile FilePath
   deriving (Show, Eq)
@@ -40,7 +40,7 @@ transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> TransferType -> IO ()
+send :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> MessageType -> IO ()
 send session appid password printHelpFn tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
