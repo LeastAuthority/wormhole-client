@@ -44,5 +44,5 @@ receiveText session code = do
         case Aeson.eitherDecode (toS received) of
           Left err -> panic $ "Could not decode message: " <> show err
           Right (MagicWormhole.Message message) -> pure message
-          Right (MagicWormhole.File _ _) -> panic $ "Unexpected message type"
+          Right (MagicWormhole.File _ _) -> panic "Unexpected message type"
     )
