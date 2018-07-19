@@ -15,6 +15,7 @@ module Transit.Internal.Peer
   , receiveAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
+  , sha256sum
   )
 where
 
@@ -34,11 +35,9 @@ import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Binary.Get (getWord32be, runGet)
 import Data.Hex (hex)
 import Data.Text (toLower)
-import System.PosixCompat.Files (getFileStatus, fileSize, rename)
+import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.Posix.Types (FileOffset)
-import System.IO (openTempFile, hClose)
 import qualified Control.Exception as E
-import System.FilePath (takeFileName)
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -298,24 +297,14 @@ receiveRecord ep key = do
             Left s -> panic s
             Right pt -> return pt
 
-receiveRecords :: TCPEndpoint -> SecretBox.Key -> FilePath -> FileOffset -> IO ByteString
-receiveRecords ep key path size = do
-  -- TODO: in the case of an exception, close the handle, delete the tmp file.
-  -- create temp file
-  bracket
-    (openTempFile "./" (takeFileName path))
-    (\(name, htemp) -> do
-        rename name (takeFileName path)
-        hClose htemp)
-    (\(_, htemp) -> do
-        blocks <- go htemp size
-        return $ show (sha256sum blocks))
-  where
-    go :: Handle -> FileOffset -> IO [ByteString]
-    go fp 0 = hClose fp >> return []
-    go fp remainingSize = do
-      block <- receiveRecord ep key
-      BS.hPut fp block
-      blocks <- go fp (toEnum (fromEnum remainingSize - BS.length block))
-      return (block:blocks)
+receiveRecords :: TCPEndpoint -> SecretBox.Key -> Int -> IO [ByteString]
+receiveRecords ep key size = do
+  go size
+    where
+      go :: Int -> IO [ByteString]
+      go remainingSize | remainingSize <= 0 = return []
+                       | otherwise = do
+                           block <- receiveRecord ep key
+                           blocks <- go (remainingSize - BS.length block)
+                           return (block:blocks)
 
