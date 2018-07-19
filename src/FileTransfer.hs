@@ -1,8 +1,9 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 module FileTransfer
-  ( sendFile
+  ( send
   , receive
+  , TransferType(..)
   )
 where
 
@@ -16,6 +17,7 @@ import qualified Data.Aeson as Aeson
 import System.FilePath (takeFileName)
 import System.IO (openTempFile, hClose)
 import System.PosixCompat.Files (rename)
+import System.Posix.Types (FileOffset)
 
 import qualified MagicWormhole
 
@@ -24,6 +26,11 @@ import Transit.Internal.Peer
 import Transit.Internal.Messages
 
 type Password = ByteString
+
+data TransferType
+  = TMsg Text
+  | TFile FilePath
+  deriving (Show, Eq)
 
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
@@ -34,8 +41,8 @@ transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> FilePath -> IO ()
-sendFile session appid password printHelpFn filepath = do
+send :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> TransferType -> IO ()
+send session appid password printHelpFn tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
   nameplate <- MagicWormhole.allocate session
@@ -45,46 +52,52 @@ sendFile session appid password printHelpFn filepath = do
   printHelpFn $ toS n <> "-" <> toS password
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn -> do
-        -- exchange abilities
-        portnum <- allocateTcpPort
-        _ <- withAsync (startServer portnum)
-             (\asyncServer -> do
-                 transitResp <- transitExchange conn portnum
-                 case transitResp of
-                   Left s -> panic s
-                   Right (Transit peerAbilities peerHints) -> do
-                     -- send offer for the file
-                     offerResp <- senderOfferExchange conn filepath
-                     fileBytes <- BS.readFile filepath
-                     case offerResp of
+        case tfd of
+          TMsg msg -> do
+            let offer = MagicWormhole.Message msg
+            MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer)))
+          TFile filepath -> do
+            -- exchange abilities
+            portnum <- allocateTcpPort
+            _ <- withAsync (startServer portnum)
+                 (\asyncServer -> do
+                     transitResp <- transitExchange conn portnum
+                     case transitResp of
                        Left s -> panic s
-                       Right _ ->
-                         runTransitProtocol peerAbilities peerHints asyncServer
-                           (\endpoint -> do
-                               -- 0. derive transit key
-                               let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                               -- 1. handshakeExchange
-                               senderHandshakeExchange endpoint transitKey
-                               -- 2. create record keys
-                               let sRecordKey = makeSenderRecordKey transitKey
-                               -- 3. send encrypted chunks of N bytes to the peer
-                               txSha256Hash <- sendRecords endpoint sRecordKey fileBytes
-                               -- 4. read a record that should contain the transit Ack.
-                               --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                               let rRecordKey = makeReceiverRecordKey transitKey
-                               rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                               closeConnection endpoint
-                               case rxAckMsg of
-                                 Right rxSha256Hash ->
-                                   when (txSha256Hash /= rxSha256Hash) $
-                                   panic "sha256 mismatch"
-                                 Left e -> panic e
-                           )
-                   Right _ -> panic "error sending transit message"
-             )
-        return ()
+                       Right (Transit peerAbilities peerHints) -> do
+                         -- send offer for the file
+                         offerResp <- senderOfferExchange conn filepath
+                         fileBytes <- BS.readFile filepath
+                         case offerResp of
+                           Left s -> panic s
+                           Right _ ->
+                             runTransitProtocol peerAbilities peerHints asyncServer
+                             (\endpoint -> do
+                                 -- 0. derive transit key
+                                 let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                                 -- 1. handshakeExchange
+                                 senderHandshakeExchange endpoint transitKey
+                                 -- 2. create record keys
+                                 let sRecordKey = makeSenderRecordKey transitKey
+                                 -- 3. send encrypted chunks of N bytes to the peer
+                                 txSha256Hash <- sendRecords endpoint sRecordKey fileBytes
+                                 -- 4. read a record that should contain the transit Ack.
+                                 --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                                 let rRecordKey = makeReceiverRecordKey transitKey
+                                 rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                                 closeConnection endpoint
+                                 case rxAckMsg of
+                                   Right rxSha256Hash ->
+                                     when (txSha256Hash /= rxSha256Hash) $
+                                     panic "sha256 mismatch"
+                                   Left e -> panic e
+                             )
+                       Right _ -> panic "error sending transit message"
+                 )
+            return ()
     )
 
+-- | receive a text message or file from the wormhole peer.
 receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
 receive session appid code = do
   -- establish the connection
@@ -146,7 +159,7 @@ receive session appid code = do
                             )
                         Right _ -> panic "Could not decode message"
                   )
-              Right _ -> panic $ "Could not decode message"
+              Right _ -> panic "Could not decode message"
     )
 
 writeRecordsToFile :: FilePath -> [ByteString] -> IO ()

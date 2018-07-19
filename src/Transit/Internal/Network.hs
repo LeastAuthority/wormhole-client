@@ -112,7 +112,6 @@ tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
       let hints' = defaultHints { addrSocketType = Stream }
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
---    testAddress :: Socket -> SockAddr -> IO ()
     testAddress so addr = do
       result <- try $ connect so addr
       case result of

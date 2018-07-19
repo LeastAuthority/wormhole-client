@@ -33,7 +33,6 @@ import qualified MagicWormhole
 import Paths_hwormhole
 import Options
 import FileTransfer
-import TextMessages
 
 -- | genWordlist would produce a list of the form
 --   [ ("aardwark", "adroitness"),
@@ -120,10 +119,7 @@ main = do
   case cmd options of
     Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
       password <- allocatePassword wordList
-      case tfd of
-        TMsg msg -> sendText session (toS password) printSendHelpText msg
-        TFileOrDir filename ->
-          sendFile session appID (toS password) printSendHelpText filename
+      send session appID (toS password) printSendHelpText tfd
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
       code <- getWormholeCode session wordList maybeCode
       receive session appID code

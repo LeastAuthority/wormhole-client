@@ -23,6 +23,7 @@ import Protolude
 import qualified Options.Applicative as Opt
 
 import qualified MagicWormhole
+import FileTransfer
 
 data Options
   = Options
@@ -34,11 +35,6 @@ data Command
   = Send TransferType
   | Receive (Maybe Text)
   deriving (Eq, Show)
-
-data TransferType
-  = TMsg Text
-  | TFileOrDir FilePath
-  deriving (Show, Eq)
 
 optionsParser :: Opt.Parser Options
 optionsParser
@@ -70,7 +66,7 @@ commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
     msgParser :: Opt.Parser TransferType
     msgParser = TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
     fileOrDirParser :: Opt.Parser TransferType
-    fileOrDirParser = TFileOrDir <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
+    fileOrDirParser = TFile <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
 
 opts :: Opt.ParserInfo Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
