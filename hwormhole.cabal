@@ -22,7 +22,8 @@ source-repository head
 
 library
   hs-source-dirs:      src
-  exposed-modules:     FileTransfer
+  exposed-modules:     Transit
+                     , FileTransfer
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages
@@ -52,12 +53,9 @@ executable hwormhole-exe
                      , Options
   -- other-extensions:
   build-depends:       base >=4.6 && <5
-                     , bytestring
-                     , aeson
-                     , binary
                      , haskeline
-                     , magic-wormhole
                      , hwormhole
+                     , magic-wormhole
                      , optparse-applicative
                      , protolude
                      , random
