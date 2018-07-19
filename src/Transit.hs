@@ -11,6 +11,7 @@
 --   4. Use a secret password shared between peers to establish an encrypted connection ('Peer.withEncryptedConnection')
 --
 -- Once you've done this, you can communicate with your peer via 'Transit.send' and 'Transit.receive'.
+-- Once can send and receive either Text messages or Files.
 --
 -- The password is never sent over the wire.
 -- Rather, it is used to negotiate a session key using SPAKE2,
