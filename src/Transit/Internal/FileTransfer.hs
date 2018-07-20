@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
-module FileTransfer
+module Transit.Internal.FileTransfer
   ( send
   , receive
   , MessageType(..)
