@@ -23,7 +23,7 @@ source-repository head
 library
   hs-source-dirs:      src
   exposed-modules:     Transit
-                     , FileTransfer
+                     , Transit.Internal.FileTransfer
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages

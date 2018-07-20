@@ -25,5 +25,5 @@ module Transit
   )
 where
 
-import qualified FileTransfer
+import qualified Transit.Internal.FileTransfer as FileTransfer
 
