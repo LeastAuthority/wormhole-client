@@ -17,6 +17,7 @@ module Transit.Internal.Peer
   , sendWormholeMessage
   , sha256sum
   , encryptC
+  , sha256PassThroughC
   )
 where
 
@@ -262,6 +263,18 @@ encryptC key = go Saltine.zero
           C.yield (toS ctsz)
           C.yield ct
           go (Saltine.nudge nonce)
+
+sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m (Hash.Digest SHA256)
+sha256PassThroughC = go $! Hash.hashInitWith SHA256
+  where
+    go ctx = do
+      b <- C.await
+      case b of
+        Nothing -> return $! Hash.hashFinalize ctx
+        Just bs -> do
+          C.yield bs
+          go $! Hash.hashUpdate ctx bs
+
 
 sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
 sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
