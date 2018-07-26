@@ -8,7 +8,6 @@ module Transit.Internal.Peer
   , senderOfferExchange
   , senderHandshakeExchange
   , receiverHandshakeExchange
---  , sendRecords
   , sendTransitMsg
   , receiveRecords
   , sendGoodAckMessage
@@ -224,32 +223,6 @@ sendRecord ep record = do
   _ <- sendBuffer ep (toS record)
   return ()
 
--- | Given the record encryption key and a bytestream, chop
--- the bytestream into blocks of 4096 bytes, encrypt them and
--- send it to the given network endpoint. The length of the
--- encrypted record is sent first, encoded as a 4-byte
--- big-endian number. After that, the encrypted record itself
--- is sent. `sendRecords` returns the SHA256 hash of the unencrypted
--- file, which can be compared with the recipient's sha256 hash.
--- sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO Text
--- sendRecords ep key bytes = do
---   forM_ records (sendRecord ep)
---   return $ show (sha256sum blocks)
---   where
---     records = go Saltine.zero blocks
---     blocks = chop 4096 bytes
---     go :: SecretBox.Nonce -> [PlainText] -> [CipherText]
---     go _ [] = []
---     go nonce (chunk:restOfFile) =
---       let cipherText = encrypt key nonce chunk
---       in
---         (cipherText): go (Saltine.nudge nonce) restOfFile
---     chop sz fileBS | fileBS == BS.empty = []
---                    | otherwise =
---                      let (chunk, chunks) = BS.splitAt sz fileBS
---                      in
---                        chunk: chop sz chunks
-
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 encryptC key = go Saltine.zero
   where
@@ -287,7 +260,7 @@ sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
 -- Saltine's nonce seem represented as a big endian bytestring.
 -- However, to interop with the wormhole python client, we need to
 -- use and send nonce as a little endian bytestring.
-encrypt :: SecretBox.Key -> SecretBox.Nonce -> ByteString -> ByteString
+encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> CipherText
 encrypt key nonce plaintext =
   let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
       newNonce = fromMaybe (panic "nonce decode failed") $
@@ -296,7 +269,7 @@ encrypt key nonce plaintext =
   in
     nonceLE <> ciphertext
 
-decrypt :: SecretBox.Key -> ByteString -> Either Text ByteString
+decrypt :: SecretBox.Key -> CipherText -> Either Text PlainText
 decrypt key ciphertext =
   -- extract nonce from ciphertext.
   let (nonceBytes, ct) = BS.splitAt boxNonce ciphertext

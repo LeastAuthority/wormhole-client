@@ -21,6 +21,8 @@ import qualified Data.Conduit.Network as CN
 import qualified Conduit as C
 import Data.Conduit ((.|))
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import Crypto.Hash (SHA256(..))
+import qualified Crypto.Hash as Hash
 
 import qualified MagicWormhole
 
@@ -83,18 +85,14 @@ send session appid password printHelpFn tfd = do
                                  -- 2. handshakeExchange
                                  senderHandshakeExchange endpoint transitKey
                                  -- 3. send encrypted chunks of N bytes to the peer
-                                 -- fileBytes <- BS.readFile filepath
-                                 -- txSha256Hash <- sendRecords endpoint sRecordKey fileBytes
-                                 C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                                 -- TODO: fool sha256sum for now
-                                 let txSha256Hash = "1234"
+                                 (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
                                  -- 4. read a record that should contain the transit Ack.
                                  --    If ack is not ok or the sha256sum is incorrect, flag an error.
                                  rxAckMsg <- receiveAckMessage endpoint rRecordKey
                                  closeConnection endpoint
                                  case rxAckMsg of
                                    Right rxSha256Hash ->
-                                     when (txSha256Hash /= rxSha256Hash) $
+                                     when ((show txSha256Hash) /= rxSha256Hash) $
                                      panic "sha256 mismatch"
                                    Left e -> panic e
                              )
@@ -103,9 +101,13 @@ send session appid password printHelpFn tfd = do
             return ()
     )
 
-sendPipeline :: C.MonadResource m => FilePath -> TCPEndpoint -> SecretBox.Key -> C.ConduitM a c m ()
+sendPipeline :: C.MonadResource m =>
+                FilePath
+             -> TCPEndpoint
+             -> SecretBox.Key
+             -> C.ConduitM a c m (Hash.Digest SHA256, ())
 sendPipeline fp (TCPEndpoint s) key = do
-  C.sourceFile fp .| C.takeC 4096 .| encryptC key .| CN.sinkSocket s
+  C.sourceFile fp .| C.takeC 4096 .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | receive a text message or file from the wormhole peer.
 receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
