@@ -92,7 +92,7 @@ send session appid password printHelpFn tfd = do
                                  closeConnection endpoint
                                  case rxAckMsg of
                                    Right rxSha256Hash ->
-                                     when ((show txSha256Hash) /= rxSha256Hash) $
+                                     when (show txSha256Hash /= rxSha256Hash) $
                                      panic "sha256 mismatch"
                                    Left e -> panic e
                              )
@@ -106,7 +106,7 @@ sendPipeline :: C.MonadResource m =>
              -> TCPEndpoint
              -> SecretBox.Key
              -> C.ConduitM a c m (Hash.Digest SHA256, ())
-sendPipeline fp (TCPEndpoint s) key = do
+sendPipeline fp (TCPEndpoint s) key =
   C.sourceFile fp .| C.takeC 4096 .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | receive a text message or file from the wormhole peer.
