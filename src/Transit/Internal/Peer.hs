@@ -8,7 +8,6 @@ module Transit.Internal.Peer
   , senderOfferExchange
   , senderHandshakeExchange
   , receiverHandshakeExchange
-  , sendRecords
   , sendTransitMsg
   , receiveRecords
   , sendGoodAckMessage
@@ -16,6 +15,8 @@ module Transit.Internal.Peer
   , receiveWormholeMessage
   , sendWormholeMessage
   , sha256sum
+  , encryptC
+  , sha256PassThroughC
   )
 where
 
@@ -38,6 +39,7 @@ import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
+import qualified Conduit as C
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -183,11 +185,11 @@ receiverHandshakeExchange ep key = do
   case r' of
     Left e -> throwIO e
     Right res | res == sHandshakeMsg -> do
-      r'' <- recvByteString (BS.length "go\n")
-      case r'' of
-        Left e -> throwIO e
-        Right m | m == "go\n" -> return ()
-                | otherwise -> throwIO InvalidHandshake
+                  r'' <- recvByteString (BS.length "go\n")
+                  case r'' of
+                    Left e -> throwIO e
+                    Right m | m == "go\n" -> return ()
+                            | otherwise -> throwIO InvalidHandshake
     Right _ -> throwIO InvalidHandshake
     where
         sendHandshake = sendBuffer ep rHandshakeMsg
@@ -218,34 +220,34 @@ sendRecord ep record = do
   -- format sz as a fixed 4 byte bytestring
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
   _ <- sendBuffer ep (toS payloadSize)
-  _ <- sendBuffer ep record
+  _ <- sendBuffer ep (toS record)
   return ()
 
--- | Given the record encryption key and a bytestream, chop
--- the bytestream into blocks of 4096 bytes, encrypt them and
--- send it to the given network endpoint. The length of the
--- encrypted record is sent first, encoded as a 4-byte
--- big-endian number. After that, the encrypted record itself
--- is sent. `sendRecords` returns the SHA256 hash of the unencrypted
--- file, which can be compared with the recipient's sha256 hash.
-sendRecords :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO Text
-sendRecords ep key bytes = do
-  forM_ records (sendRecord ep)
-  return $ show (sha256sum blocks)
+encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
+encryptC key = go Saltine.zero
   where
-    records = go Saltine.zero blocks
-    blocks = chop 4096 bytes
-    go :: SecretBox.Nonce -> [PlainText] -> [CipherText]
-    go _ [] = []
-    go nonce (chunk:restOfFile) =
-      let cipherText = encrypt key nonce chunk
-      in
-        (cipherText): go (Saltine.nudge nonce) restOfFile
-    chop sz fileBS | fileBS == BS.empty = []
-                   | otherwise =
-                     let (chunk, chunks) = BS.splitAt sz fileBS
-                     in
-                       chunk: chop sz chunks
+    go nonce = do
+      b <- C.await
+      case b of
+        Nothing -> return ()
+        Just chunk -> do
+          let ct = encrypt key nonce chunk
+              ctsz = toLazyByteString (word32BE (fromIntegral (BS.length ct)))
+          C.yield (toS ctsz)
+          C.yield ct
+          go (Saltine.nudge nonce)
+
+sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m (Hash.Digest SHA256)
+sha256PassThroughC = go $! Hash.hashInitWith SHA256
+  where
+    go ctx = do
+      b <- C.await
+      case b of
+        Nothing -> return $! Hash.hashFinalize ctx
+        Just bs -> do
+          C.yield bs
+          go $! Hash.hashUpdate ctx bs
+
 
 sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
 sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
@@ -258,16 +260,16 @@ sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
 -- Saltine's nonce seem represented as a big endian bytestring.
 -- However, to interop with the wormhole python client, we need to
 -- use and send nonce as a little endian bytestring.
-encrypt :: SecretBox.Key -> SecretBox.Nonce -> ByteString -> ByteString
+encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> CipherText
 encrypt key nonce plaintext =
-  let nonceLE = BS.reverse $ Saltine.encode nonce
+  let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
       newNonce = fromMaybe (panic "nonce decode failed") $
-                 Saltine.decode nonceLE
-      ciphertext = SecretBox.secretbox key newNonce plaintext
+                 Saltine.decode (toS nonceLE)
+      ciphertext = toS $ SecretBox.secretbox key newNonce plaintext
   in
     nonceLE <> ciphertext
 
-decrypt :: SecretBox.Key -> ByteString -> Either Text ByteString
+decrypt :: SecretBox.Key -> CipherText -> Either Text PlainText
 decrypt key ciphertext =
   -- extract nonce from ciphertext.
   let (nonceBytes, ct) = BS.splitAt boxNonce ciphertext

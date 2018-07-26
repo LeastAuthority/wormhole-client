@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Transit.Internal.Network
   ( allocateTcpPort
   , buildDirectHints
@@ -7,7 +8,7 @@ module Transit.Internal.Network
   , sendBuffer
   , recvBuffer
   , closeConnection
-  , TCPEndpoint
+  , TCPEndpoint(..)
   , PortNumber
   , startServer
   ) where

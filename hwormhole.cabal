@@ -33,6 +33,8 @@ library
                      , async
                      , aeson
                      , binary
+                     , conduit
+                     , conduit-extra
                      , magic-wormhole
                      , network >=2.7 && <3
                      , protolude
