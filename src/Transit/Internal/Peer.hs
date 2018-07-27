@@ -220,7 +220,7 @@ sendRecord ep record = do
   -- format sz as a fixed 4 byte bytestring
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
   _ <- sendBuffer ep (toS payloadSize)
-  _ <- sendBuffer ep (toS record)
+  _ <- sendBuffer ep record
   return ()
 
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
@@ -231,19 +231,20 @@ encryptC key = go Saltine.zero
       case b of
         Nothing -> return ()
         Just chunk -> do
-          let ct = encrypt key nonce chunk
-              ctsz = toLazyByteString (word32BE (fromIntegral (BS.length ct)))
-          C.yield (toS ctsz)
-          C.yield ct
+          let cipherText = encrypt key nonce chunk
+              cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText)))
+          C.yield (toS cipherTextSize)
+          C.yield cipherText
           go (Saltine.nudge nonce)
 
-sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m (Hash.Digest SHA256)
+sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m Text
 sha256PassThroughC = go $! Hash.hashInitWith SHA256
   where
+    go :: (Monad m) => Hash.Context SHA256 -> C.ConduitT ByteString ByteString m Text
     go ctx = do
       b <- C.await
       case b of
-        Nothing -> return $! Hash.hashFinalize ctx
+        Nothing -> return $! (show (Hash.hashFinalize ctx))
         Just bs -> do
           C.yield bs
           go $! Hash.hashUpdate ctx bs

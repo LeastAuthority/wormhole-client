@@ -21,8 +21,6 @@ import qualified Data.Conduit.Network as CN
 import qualified Conduit as C
 import Data.Conduit ((.|))
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
-import Crypto.Hash (SHA256(..))
-import qualified Crypto.Hash as Hash
 
 import qualified MagicWormhole
 
@@ -92,7 +90,7 @@ send session appid password printHelpFn tfd = do
                                  closeConnection endpoint
                                  case rxAckMsg of
                                    Right rxSha256Hash ->
-                                     when (show txSha256Hash /= rxSha256Hash) $
+                                     when (txSha256Hash /= rxSha256Hash) $
                                      panic "sha256 mismatch"
                                    Left e -> panic e
                              )
@@ -105,9 +103,9 @@ sendPipeline :: C.MonadResource m =>
                 FilePath
              -> TCPEndpoint
              -> SecretBox.Key
-             -> C.ConduitM a c m (Hash.Digest SHA256, ())
+             -> C.ConduitM a c m (Text, ())
 sendPipeline fp (TCPEndpoint s) key =
-  C.sourceFile fp .| C.takeC 4096 .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
+  C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | receive a text message or file from the wormhole peer.
 receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
