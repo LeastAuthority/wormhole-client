@@ -11,6 +11,7 @@ module Transit.Internal.Network
   , TCPEndpoint(..)
   , PortNumber
   , startServer
+  , startClient
   ) where
 
 import Protolude
@@ -150,6 +151,13 @@ data ConnectionError
   deriving (Eq, Show)
 
 instance Exception ConnectionError
+
+startClient :: [Ability] -> [ConnectionHint] -> IO TCPEndpoint
+startClient as hs = do
+  maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
+  case maybeClientEndPoint of
+    Just ep -> return ep
+    Nothing -> throwIO (ConnectionError "Peer socket is not active")
 
 runTransitProtocol :: [Ability] -> [ConnectionHint] -> Async TCPEndpoint -> (TCPEndpoint -> IO ()) -> IO ()
 runTransitProtocol as hs serverAsync app = do
