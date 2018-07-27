@@ -62,41 +62,39 @@ send session appid password printHelpFn tfd = do
           TFile filepath -> do
             -- exchange abilities
             portnum <- allocateTcpPort
-            _ <- withAsync (startServer portnum)
-                 (\asyncServer -> do
-                     transitResp <- transitExchange conn portnum
-                     case transitResp of
-                       Left s -> panic s
-                       Right (Transit peerAbilities peerHints) -> do
-                         -- send offer for the file
-                         offerResp <- senderOfferExchange conn filepath
-                         case offerResp of
-                           Left s -> panic s
-                           Right _ ->
-                             runTransitProtocol peerAbilities peerHints asyncServer
-                             (\endpoint -> do
-                                 -- 0. derive transit key
-                                 let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                                 -- 1. create record keys
-                                     sRecordKey = makeSenderRecordKey transitKey
-                                     rRecordKey = makeReceiverRecordKey transitKey
-                                 -- 2. handshakeExchange
-                                 senderHandshakeExchange endpoint transitKey
-                                 -- 3. send encrypted chunks of N bytes to the peer
-                                 (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                                 -- 4. read a record that should contain the transit Ack.
-                                 --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                                 rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                                 closeConnection endpoint
-                                 case rxAckMsg of
-                                   Right rxSha256Hash ->
-                                     when (txSha256Hash /= rxSha256Hash) $
-                                     panic "sha256 mismatch"
-                                   Left e -> panic e
-                             )
-                       Right _ -> panic "error sending transit message"
-                 )
-            return ()
+            withAsync (startServer portnum) $ \asyncServer -> do
+              transitResp <- transitExchange conn portnum
+              case transitResp of
+                Left s -> panic s
+                Right (Transit peerAbilities peerHints) -> do
+                  -- send offer for the file
+                  offerResp <- senderOfferExchange conn filepath
+                  fileBytes <- BS.readFile filepath
+                  case offerResp of
+                    Left s -> panic s
+                    Right _ ->
+                      withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
+                      ep <- waitAny [asyncServer, asyncClient]
+                      let endpoint = snd ep
+                      -- 0. derive transit key
+                      let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                      -- 1. create record keys
+                          sRecordKey = makeSenderRecordKey transitKey
+                          rRecordKey = makeReceiverRecordKey transitKey
+                      -- 2. handshakeExchange
+                      senderHandshakeExchange endpoint transitKey
+                      -- 3. send encrypted chunks of N bytes to the peer
+                      (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
+                      -- 4. read a record that should contain the transit Ack.
+                      --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                      rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                      closeConnection endpoint
+                      case rxAckMsg of
+                        Right rxSha256Hash ->
+                          when (txSha256Hash /= rxSha256Hash) $
+                          panic "sha256 mismatch"
+                        Left e -> panic e
+                Right _ -> panic "error sending transit message"
     )
 
 sendPipeline :: C.MonadResource m =>
