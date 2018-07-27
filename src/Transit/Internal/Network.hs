@@ -125,11 +125,11 @@ tryToConnect (Ability RelayV1) _ = do
   TIO.putStrLn "Relays are not supported yet"
   return Nothing
 
-sendBuffer :: TCPEndpoint -> ByteString -> IO (Either IOException Int)
-sendBuffer ep = try . send (sock ep)
+sendBuffer :: TCPEndpoint -> ByteString -> IO Int
+sendBuffer ep = send (sock ep)
 
-recvBuffer :: TCPEndpoint -> Int -> IO (Either IOException ByteString)
-recvBuffer ep = try . recv (sock ep)
+recvBuffer :: TCPEndpoint -> Int -> IO ByteString
+recvBuffer ep = recv (sock ep)
 
 closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = close (sock ep)

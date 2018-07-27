@@ -164,10 +164,7 @@ instance E.Exception InvalidHandshake where
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 senderHandshakeExchange ep key = do
   (_, r) <- concurrently sendHandshake rxHandshake
-  case r of
-    Left e -> throwIO e
-    Right res ->
-      if res == rHandshakeMsg
+  if r == rHandshakeMsg
       then sendGo >> return ()
       else sendNeverMind >> closeConnection ep
   where
@@ -182,15 +179,10 @@ senderHandshakeExchange ep key = do
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 receiverHandshakeExchange ep key = do
   (_, r') <- concurrently sendHandshake rxHandshake
-  case r' of
-    Left e -> throwIO e
-    Right res | res == sHandshakeMsg -> do
-                  r'' <- recvByteString (BS.length "go\n")
-                  case r'' of
-                    Left e -> throwIO e
-                    Right m | m == "go\n" -> return ()
-                            | otherwise -> throwIO InvalidHandshake
-    Right _ -> throwIO InvalidHandshake
+  r'' <- recvByteString (BS.length "go\n")
+  if (r' <> r'') == sHandshakeMsg <> "go\n"
+    then return ()
+    else throwIO InvalidHandshake
     where
         sendHandshake = sendBuffer ep rHandshakeMsg
         rxHandshake = recvByteString (BS.length sHandshakeMsg)
@@ -209,19 +201,19 @@ receiveAckMessage ep key = do
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-  sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
+  _ <- sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
+  return ()
 
 type PlainText = ByteString
 type CipherText = ByteString
 
-sendRecord :: TCPEndpoint -> ByteString -> IO ()
+sendRecord :: TCPEndpoint -> ByteString -> IO Int
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
   -- format sz as a fixed 4 byte bytestring
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
-  _ <- sendBuffer ep (toS payloadSize)
-  _ <- sendBuffer ep record
-  return ()
+  _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
+  sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
 
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 encryptC key = go Saltine.zero
@@ -287,18 +279,13 @@ receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
   -- decrypt the record
-  resLen <- recvBuffer ep 4
-  case resLen of
-    Left e -> throwIO e
-    Right lenBytes -> do
-      let len = runGet getWord32be (BL.fromStrict lenBytes)
-      recBytes <- recvBuffer ep (fromIntegral len)
-      case recBytes of
-        Left e -> throwIO e
-        Right encRecord -> do
-          case decrypt key encRecord of
-            Left s -> panic s
-            Right pt -> return pt
+  do
+    lenBytes <- recvBuffer ep 4
+    let len = runGet getWord32be (BL.fromStrict lenBytes)
+    encRecord <- recvBuffer ep (fromIntegral len)
+    case decrypt key encRecord of
+      Left s -> panic s
+      Right pt -> return pt
 
 receiveRecords :: TCPEndpoint -> SecretBox.Key -> Int -> IO [ByteString]
 receiveRecords ep key size = do
