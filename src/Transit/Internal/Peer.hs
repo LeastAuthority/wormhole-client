@@ -40,6 +40,7 @@ import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import qualified Conduit as C
+import qualified Data.Text.IO as TIO
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -272,14 +273,13 @@ decrypt key ciphertext =
   in
     case maybePlainText of
       Just pt -> Right pt
-      Nothing -> Left "decription error"
+      Nothing -> Left "decryption error"
 
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
 receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
   -- decrypt the record
-  do
     lenBytes <- recvBuffer ep 4
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
