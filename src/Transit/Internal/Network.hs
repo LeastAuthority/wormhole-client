@@ -143,8 +143,9 @@ startServer portnum = do
   _ <- setSocketOption sock' ReuseAddr 1
   _ <- bind sock' (addrAddress addr)
   listen sock' 5
-  (sock'', _) <- accept sock'
-  return (TCPEndpoint sock'')
+  (conn, _) <- accept sock'
+  close sock'
+  return (TCPEndpoint conn)
 
 data ConnectionError
   = ConnectionError Text
