@@ -284,7 +284,7 @@ receiveRecord ep key = do
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
     case decrypt key encRecord of
-      Left s -> panic s
+      Left s -> throwIO (CouldNotDecrypt s)
       Right pt -> return pt
 
 receiveRecords :: TCPEndpoint -> SecretBox.Key -> Int -> IO [ByteString]
