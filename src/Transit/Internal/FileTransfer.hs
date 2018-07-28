@@ -65,13 +65,13 @@ send session appid password printHelpFn tfd = do
             withAsync (startServer portnum) $ \asyncServer -> do
               transitResp <- transitExchange conn portnum
               case transitResp of
-                Left s -> panic s
+                Left s -> throwIO (TransitError s)
                 Right (Transit peerAbilities peerHints) -> do
                   -- send offer for the file
                   offerResp <- senderOfferExchange conn filepath
                   fileBytes <- BS.readFile filepath
                   case offerResp of
-                    Left s -> panic s
+                    Left s -> throwIO (OfferError s)
                     Right _ ->
                       withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
                       ep <- waitAny [asyncServer, asyncClient]
@@ -92,9 +92,9 @@ send session appid password printHelpFn tfd = do
                       case rxAckMsg of
                         Right rxSha256Hash ->
                           when (txSha256Hash /= rxSha256Hash) $
-                          panic "sha256 mismatch"
-                        Left e -> panic e
-                Right _ -> panic "error sending transit message"
+                          throwIO (Sha256SumError "sha256 mismatch")
+                        Left e -> throwIO (ConnectionError e)
+                Right _ -> throwIO (ConnectionError "error sending transit message")
     )
 
 sendPipeline :: C.MonadResource m =>

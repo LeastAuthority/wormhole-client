@@ -12,6 +12,7 @@ module Transit.Internal.Network
   , PortNumber
   , startServer
   , startClient
+  , CommunicationError(..)
   ) where
 
 import Protolude
@@ -147,11 +148,15 @@ startServer portnum = do
   close sock'
   return (TCPEndpoint conn)
 
-data ConnectionError
+data CommunicationError
   = ConnectionError Text
+  | OfferError Text
+  | TransitError Text
+  | Sha256SumError Text
+  | CouldNotDecrypt Text
   deriving (Eq, Show)
 
-instance Exception ConnectionError
+instance Exception CommunicationError
 
 startClient :: [Ability] -> [ConnectionHint] -> IO TCPEndpoint
 startClient as hs = do
