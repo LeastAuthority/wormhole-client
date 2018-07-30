@@ -9,14 +9,15 @@ module Transit.Internal.Peer
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendTransitMsg
-  , receiveRecords
   , sendGoodAckMessage
   , receiveAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
-  , sha256sum
   , encryptC
+  , decryptC
+  , assembleRecordC
   , sha256PassThroughC
+  , passThroughBytesC
   )
 where
 
@@ -40,7 +41,7 @@ import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import qualified Conduit as C
-import qualified Data.Text.IO as TIO
+import qualified Data.Binary.Builder as BB
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -230,6 +231,24 @@ encryptC key = go Saltine.zero
           C.yield cipherText
           go (Saltine.nudge nonce)
 
+decryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
+decryptC key = loop
+  where
+    loop = do
+      b <- C.await
+      case b of
+        Nothing -> return ()
+        Just bs -> do
+          let (nonceBytes, ciphertext) = BS.splitAt boxNonce bs
+              nonce = fromMaybe (panic "unable to decode nonce") $
+                Saltine.decode nonceBytes
+              maybePlainText = SecretBox.secretboxOpen key nonce ciphertext
+          case maybePlainText of
+            Just plaintext -> do
+              C.yield plaintext
+              loop
+            Nothing -> throwIO (CouldNotDecrypt "SecretBox failed to open")
+
 sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m Text
 sha256PassThroughC = go $! Hash.hashInitWith SHA256
   where
@@ -242,13 +261,45 @@ sha256PassThroughC = go $! Hash.hashInitWith SHA256
           C.yield bs
           go $! Hash.hashUpdate ctx bs
 
+assembleRecordC :: Monad m => C.ConduitT ByteString ByteString m ()
+assembleRecordC = do
+  b <- C.await
+  case b of
+    Nothing -> return ()
+    Just bs -> do
+      let (hdr, pkt) = BS.splitAt 4 bs
+      let len = runGet getWord32be (BL.fromStrict hdr)
+      getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
 
-sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
-sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
+getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
+getChunk len bb = go len bb
   where
-    hashBlocks :: Hash.Context Hash.SHA256 -> [ByteString] -> Hash.Digest Hash.SHA256
-    hashBlocks ctx [] = Hash.hashFinalize ctx
-    hashBlocks ctx (r:rs) = hashBlocks (Hash.hashUpdate ctx r) rs
+    go size res = do
+      b <- C.await
+      case b of
+        Nothing -> return ()
+        Just bs | size == BS.length bs -> do
+                    C.yield $! toS (BB.toLazyByteString res) <> bs
+                    assembleRecordC
+                | size < BS.length bs -> do
+                    let (f, l) = BS.splitAt size bs
+                    C.leftover l
+                    C.yield (toS (BB.toLazyByteString res) <> f)
+                    assembleRecordC
+                | otherwise -> do
+                    go (size - BS.length bs) (res <> BB.fromByteString bs)
+
+passThroughBytesC :: Monad m => Int -> C.ConduitT ByteString ByteString m ()
+passThroughBytesC len = go len
+  where
+    go n | n <= 0 = return ()
+         | otherwise = do
+             b <- C.await
+             case b of
+               Nothing -> return ()
+               Just bs -> do
+                 C.yield bs
+                 go (n - (BS.length bs))
 
 -- | encrypt the given chunk with the given secretbox key and nonce.
 -- Saltine's nonce seem represented as a big endian bytestring.
@@ -286,15 +337,4 @@ receiveRecord ep key = do
     case decrypt key encRecord of
       Left s -> throwIO (CouldNotDecrypt s)
       Right pt -> return pt
-
-receiveRecords :: TCPEndpoint -> SecretBox.Key -> Int -> IO [ByteString]
-receiveRecords ep key size = do
-  go size
-    where
-      go :: Int -> IO [ByteString]
-      go remainingSize | remainingSize <= 0 = return []
-                       | otherwise = do
-                           block <- receiveRecord ep key
-                           blocks <- go (remainingSize - BS.length block)
-                           return (block:blocks)
 
