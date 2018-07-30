@@ -11,12 +11,8 @@ import Protolude
 
 import qualified Crypto.Spake2 as Spake2
 import qualified Data.Aeson as Aeson
-import qualified Data.ByteString as BS
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
-import System.FilePath (takeFileName)
-import System.IO (openTempFile, hClose)
-import System.PosixCompat.Files (rename)
 import qualified Data.Conduit.Network as CN
 import qualified Conduit as C
 import Data.Conduit ((.|))
@@ -27,6 +23,7 @@ import qualified MagicWormhole
 import Transit.Internal.Network
 import Transit.Internal.Peer
 import Transit.Internal.Messages
+import Transit.Internal.Pipeline
 
 type Password = ByteString
 

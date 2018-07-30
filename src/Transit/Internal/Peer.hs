@@ -13,24 +13,14 @@ module Transit.Internal.Peer
   , receiveAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
-  , encryptC
-  , decryptC
-  , assembleRecordC
-  , sha256PassThroughC
-  , passThroughBytesC
   )
 where
 
 import Protolude
 
 import qualified Control.Exception as E
-import Crypto.Hash (SHA256(..))
-import qualified Crypto.Hash as Hash
-import qualified Crypto.KDF.HKDF as HKDF
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
-import Crypto.Saltine.Internal.ByteSizes (boxNonce)
-import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
 import qualified Data.ByteString as BS
@@ -40,37 +30,12 @@ import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
-import qualified Conduit as C
-import qualified Data.Binary.Builder as BB
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
+import Transit.Internal.Crypto
 
 import qualified MagicWormhole
-
-hkdf :: ByteString -> SecretBox.Key -> ByteString -> ByteString
-hkdf salt key purpose =
-  HKDF.expand (HKDF.extract salt (Saltine.encode key) :: HKDF.PRK SHA256) purpose keySize
-  where
-    keySize = ByteSizes.secretBoxKey
-
-data Purpose
-  = SenderHandshake
-  | ReceiverHandshake
-  | SenderRecord
-  | ReceiverRecord
-  deriving (Eq, Show)
-
-deriveKeyFromPurpose :: Purpose -> SecretBox.Key -> ByteString
-deriveKeyFromPurpose purpose key =
-  hkdf salt key (purposeStr purpose)
-  where
-    salt = "" :: ByteString
-    purposeStr :: Purpose -> ByteString
-    purposeStr SenderHandshake = "transit_sender"
-    purposeStr ReceiverHandshake = "transit_receiver"
-    purposeStr SenderRecord = "transit_record_sender_key"
-    purposeStr ReceiverRecord = "transit_record_receiver_key"
 
 makeSenderHandshake :: SecretBox.Key -> ByteString
 makeSenderHandshake key =
@@ -206,9 +171,6 @@ sendGoodAckMessage ep key sha256Sum = do
   _ <- sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
   return ()
 
-type PlainText = ByteString
-type CipherText = ByteString
-
 sendRecord :: TCPEndpoint -> ByteString -> IO Int
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
@@ -217,114 +179,7 @@ sendRecord ep record = do
   _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
   sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
 
-encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
-encryptC key = go Saltine.zero
-  where
-    go nonce = do
-      b <- C.await
-      case b of
-        Nothing -> return ()
-        Just chunk -> do
-          let cipherText = encrypt key nonce chunk
-              cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText)))
-          C.yield (toS cipherTextSize)
-          C.yield cipherText
-          go (Saltine.nudge nonce)
 
-decryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
-decryptC key = loop
-  where
-    loop = do
-      b <- C.await
-      case b of
-        Nothing -> return ()
-        Just bs -> do
-          let (nonceBytes, ciphertext) = BS.splitAt boxNonce bs
-              nonce = fromMaybe (panic "unable to decode nonce") $
-                Saltine.decode nonceBytes
-              maybePlainText = SecretBox.secretboxOpen key nonce ciphertext
-          case maybePlainText of
-            Just plaintext -> do
-              C.yield plaintext
-              loop
-            Nothing -> throwIO (CouldNotDecrypt "SecretBox failed to open")
-
-sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m Text
-sha256PassThroughC = go $! Hash.hashInitWith SHA256
-  where
-    go :: (Monad m) => Hash.Context SHA256 -> C.ConduitT ByteString ByteString m Text
-    go ctx = do
-      b <- C.await
-      case b of
-        Nothing -> return $! (show (Hash.hashFinalize ctx))
-        Just bs -> do
-          C.yield bs
-          go $! Hash.hashUpdate ctx bs
-
-assembleRecordC :: Monad m => C.ConduitT ByteString ByteString m ()
-assembleRecordC = do
-  b <- C.await
-  case b of
-    Nothing -> return ()
-    Just bs -> do
-      let (hdr, pkt) = BS.splitAt 4 bs
-      let len = runGet getWord32be (BL.fromStrict hdr)
-      getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
-
-getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
-getChunk len bb = go len bb
-  where
-    go size res = do
-      b <- C.await
-      case b of
-        Nothing -> return ()
-        Just bs | size == BS.length bs -> do
-                    C.yield $! toS (BB.toLazyByteString res) <> bs
-                    assembleRecordC
-                | size < BS.length bs -> do
-                    let (f, l) = BS.splitAt size bs
-                    C.leftover l
-                    C.yield (toS (BB.toLazyByteString res) <> f)
-                    assembleRecordC
-                | otherwise -> do
-                    go (size - BS.length bs) (res <> BB.fromByteString bs)
-
-passThroughBytesC :: Monad m => Int -> C.ConduitT ByteString ByteString m ()
-passThroughBytesC len = go len
-  where
-    go n | n <= 0 = return ()
-         | otherwise = do
-             b <- C.await
-             case b of
-               Nothing -> return ()
-               Just bs -> do
-                 C.yield bs
-                 go (n - (BS.length bs))
-
--- | encrypt the given chunk with the given secretbox key and nonce.
--- Saltine's nonce seem represented as a big endian bytestring.
--- However, to interop with the wormhole python client, we need to
--- use and send nonce as a little endian bytestring.
-encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> CipherText
-encrypt key nonce plaintext =
-  let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
-      newNonce = fromMaybe (panic "nonce decode failed") $
-                 Saltine.decode (toS nonceLE)
-      ciphertext = toS $ SecretBox.secretbox key newNonce plaintext
-  in
-    nonceLE <> ciphertext
-
-decrypt :: SecretBox.Key -> CipherText -> Either Text PlainText
-decrypt key ciphertext =
-  -- extract nonce from ciphertext.
-  let (nonceBytes, ct) = BS.splitAt boxNonce ciphertext
-      nonce = fromMaybe (panic "unable to decode nonce") $
-              Saltine.decode nonceBytes
-      maybePlainText = SecretBox.secretboxOpen key nonce ct
-  in
-    case maybePlainText of
-      Just pt -> Right pt
-      Nothing -> Left "decryption error"
 
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
 receiveRecord ep key = do
