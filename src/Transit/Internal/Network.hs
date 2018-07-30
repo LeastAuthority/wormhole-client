@@ -4,7 +4,6 @@
 module Transit.Internal.Network
   ( allocateTcpPort
   , buildDirectHints
-  , runTransitProtocol
   , sendBuffer
   , recvBuffer
   , closeConnection
@@ -154,6 +153,7 @@ data CommunicationError
   | TransitError Text
   | Sha256SumError Text
   | CouldNotDecrypt Text
+  | UnknownPeerMessage Text
   deriving (Eq, Show)
 
 instance Exception CommunicationError
@@ -164,20 +164,3 @@ startClient as hs = do
   case maybeClientEndPoint of
     Just ep -> return ep
     Nothing -> throwIO (ConnectionError "Peer socket is not active")
-
-runTransitProtocol :: [Ability] -> [ConnectionHint] -> Async TCPEndpoint -> (TCPEndpoint -> IO ()) -> IO ()
-runTransitProtocol as hs serverAsync app = do
-  -- establish the tcp connection with the peer/relay
-  -- for each (hostname, port) pair in direct hints, try to establish connection
-  maybeServerAccepted <- poll serverAsync
-  case maybeServerAccepted of
-    Nothing -> do
-      maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
-      case maybeClientEndPoint of
-        Just ep -> do
-          -- kill server async
-          cancel serverAsync
-          app ep
-        Nothing -> throwIO (ConnectionError "Peer socket is not active")
-    Just (Right ep) -> app ep
-    Just e -> panic (show e)
