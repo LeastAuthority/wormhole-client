@@ -132,48 +132,48 @@ receive session appid code = do
         received <- receiveWormholeMessage conn
         case Aeson.eitherDecode (toS received) of
           Right (MagicWormhole.Message message) -> TIO.putStrLn message
-          Right (MagicWormhole.File _ _) -> panic "did not expect a file offer"
+          Right (MagicWormhole.File _ _) -> throwIO (ConnectionError "did not expect a file offer")
           -- ok, we received the Transit Message, send back a transit message
           Left _ ->
             case Aeson.eitherDecode (toS received) of
-              Left err -> panic (show err)
+              Left err -> throwIO (TransitError (toS err))
               Right (Transit peerAbilities peerHints) -> do
                 let abilities' = [Ability DirectTcpV1]
                 portnum <- allocateTcpPort
                 hints' <- buildDirectHints portnum
-                withAsync (startServer portnum)
-                  (\asyncServer -> do
-                      sendTransitMsg conn abilities' hints'
-                      -- now expect an offer message
-                      offerMsg <- receiveWormholeMessage conn
-                      case Aeson.eitherDecode (toS offerMsg) of
-                        Left err -> panic ("unable to decode offer msg" <> show err)
-                        Right (MagicWormhole.File name size) -> do
-                          -- TODO: if the file already exist in the current dir, abort
-                          -- send an answer message with file_ack.
-                          let ans = Answer (FileAck "ok")
-                          sendWormholeMessage conn (Aeson.encode ans)
-                          runTransitProtocol peerAbilities peerHints asyncServer
-                            (\endpoint -> do
-                                -- 0. derive transit key
-                                let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                                -- 1. handshakeExchange
-                                receiverHandshakeExchange endpoint transitKey
-                                -- 2. create sender/receiver record key, sender record key
-                                --    for decrypting incoming records, receiver record key
-                                --    for sending the file_ack back at the end.
-                                let sRecordKey = makeSenderRecordKey transitKey
-                                    rRecordKey = makeReceiverRecordKey transitKey
-                                -- 3. receive and decrypt records (length followed by length
-                                --    sized packets). Also keep track of decrypted size in
-                                --    order to know when to send the file ack at the end.
-                                (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
-                                TIO.putStrLn (show rxSha256Sum)
-                                sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
-                                -- close the connection
-                                closeConnection endpoint
-                            )
-                        Right _ -> panic "Could not decode message"
-                  )
-              Right _ -> panic "Could not decode message"
+                withAsync (startServer portnum) $ \asyncServer -> do
+                  sendTransitMsg conn abilities' hints'
+                  -- now expect an offer message
+                  offerMsg <- receiveWormholeMessage conn
+                  case Aeson.eitherDecode (toS offerMsg) of
+                    Left err -> throwIO (OfferError $ "unable to decode offer msg: " <> toS err)
+                    Right (MagicWormhole.File name size) -> do
+                      -- TODO: if the file already exist in the current dir, abort
+                      -- send an answer message with file_ack.
+                      let ans = Answer (FileAck "ok")
+                      sendWormholeMessage conn (Aeson.encode ans)
+                      -- runTransitProtocol peerAbilities peerHints asyncServer
+                      withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
+                        ep <- waitAny [asyncServer, asyncClient]
+                        let endpoint = snd ep
+                        -- 0. derive transit key
+                        let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                        -- 1. handshakeExchange
+                        receiverHandshakeExchange endpoint transitKey
+                        -- 2. create sender/receiver record key, sender record key
+                        --    for decrypting incoming records, receiver record key
+                        --    for sending the file_ack back at the end.
+                        let sRecordKey = makeSenderRecordKey transitKey
+                            rRecordKey = makeReceiverRecordKey transitKey
+                        -- 3. receive and decrypt records (length followed by length
+                        --    sized packets). Also keep track of decrypted size in
+                        --    order to know when to send the file ack at the end.
+                        (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
+                        TIO.putStrLn (show rxSha256Sum)
+                        sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
+                        -- close the connection
+                        closeConnection endpoint
+
+                    Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
+              Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
     )
