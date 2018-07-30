@@ -30,6 +30,7 @@ import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
+import System.FilePath (takeFileName)
 
 import Transit.Internal.Messages
 import Transit.Internal.Network
@@ -105,7 +106,7 @@ senderOfferExchange conn path = do
     sendOffer :: IO ()
     sendOffer = do
       size <- getFileSize path
-      let fileOffer = MagicWormhole.File (toS path) size
+      let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
       MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
     receiveResponse :: IO ByteString
     receiveResponse = do
@@ -178,8 +179,6 @@ sendRecord ep record = do
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
   _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
   sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
-
-
 
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
 receiveRecord ep key = do

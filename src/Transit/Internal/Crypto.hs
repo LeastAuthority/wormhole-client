@@ -34,7 +34,6 @@ decrypt key ciphertext =
       Just pt -> Right pt
       Nothing -> Left "decryption error"
 
-
 -- | encrypt the given chunk with the given secretbox key and nonce.
 -- Saltine's nonce seem represented as a big endian bytestring.
 -- However, to interop with the wormhole python client, we need to

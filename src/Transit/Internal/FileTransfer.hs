@@ -17,6 +17,7 @@ import qualified Data.Conduit.Network as CN
 import qualified Conduit as C
 import Data.Conduit ((.|))
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import System.FilePath ((</>))
 
 import qualified MagicWormhole
 
@@ -112,7 +113,7 @@ receivePipeline fp len (TCPEndpoint s) key =
     .| assembleRecordC
     .| decryptC key
     .| passThroughBytesC len
-    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious "/tmp/foobar"
+    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious ("./" </> fp)
 
 -- | receive a text message or file from the wormhole peer.
 receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
