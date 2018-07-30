@@ -27,6 +27,8 @@ library
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages
+                     , Transit.Internal.Pipeline
+                     , Transit.Internal.Crypto
   build-depends:       base >=4.6 && <5
                      , bytestring
                      , aeson >=1.4 && <2
