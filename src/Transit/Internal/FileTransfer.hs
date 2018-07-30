@@ -69,31 +69,30 @@ send session appid password printHelpFn tfd = do
                 Right (Transit peerAbilities peerHints) -> do
                   -- send offer for the file
                   offerResp <- senderOfferExchange conn filepath
-                  fileBytes <- BS.readFile filepath
                   case offerResp of
                     Left s -> throwIO (OfferError s)
-                    Right _ ->
+                    Right _ -> do
                       withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
-                      ep <- waitAny [asyncServer, asyncClient]
-                      let endpoint = snd ep
-                      -- 0. derive transit key
-                      let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                      -- 1. create record keys
-                          sRecordKey = makeSenderRecordKey transitKey
-                          rRecordKey = makeReceiverRecordKey transitKey
-                      -- 2. handshakeExchange
-                      senderHandshakeExchange endpoint transitKey
-                      -- 3. send encrypted chunks of N bytes to the peer
-                      (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                      -- 4. read a record that should contain the transit Ack.
-                      --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                      rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                      closeConnection endpoint
-                      case rxAckMsg of
-                        Right rxSha256Hash ->
-                          when (txSha256Hash /= rxSha256Hash) $
-                          throwIO (Sha256SumError "sha256 mismatch")
-                        Left e -> throwIO (ConnectionError e)
+                        ep <- waitAny [asyncServer, asyncClient]
+                        let endpoint = snd ep
+                        -- 0. derive transit key
+                        let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                        -- 1. create record keys
+                            sRecordKey = makeSenderRecordKey transitKey
+                            rRecordKey = makeReceiverRecordKey transitKey
+                        -- 2. handshakeExchange
+                        senderHandshakeExchange endpoint transitKey
+                        -- 3. send encrypted chunks of N bytes to the peer
+                        (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
+                        -- 4. read a record that should contain the transit Ack.
+                        --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                        rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                        closeConnection endpoint
+                        case rxAckMsg of
+                          Right rxSha256Hash ->
+                            when (txSha256Hash /= rxSha256Hash) $
+                            throwIO (Sha256SumError "sha256 mismatch")
+                          Left e -> throwIO (ConnectionError e)
                 Right _ -> throwIO (ConnectionError "error sending transit message")
     )
 
@@ -104,6 +103,19 @@ sendPipeline :: C.MonadResource m =>
              -> C.ConduitM a c m (Text, ())
 sendPipeline fp (TCPEndpoint s) key =
   C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
+
+receivePipeline :: C.MonadResource m =>
+                   FilePath
+                -> Int
+                -> TCPEndpoint
+                -> SecretBox.Key
+                -> C.ConduitM a c m (Text, ())
+receivePipeline fp len (TCPEndpoint s) key =
+    CN.sourceSocket s
+    .| assembleRecordC
+    .| decryptC key
+    .| passThroughBytesC len
+    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious "/tmp/foobar"
 
 -- | receive a text message or file from the wormhole peer.
 receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
@@ -157,11 +169,9 @@ receive session appid code = do
                                 -- 3. receive and decrypt records (length followed by length
                                 --    sized packets). Also keep track of decrypted size in
                                 --    order to know when to send the file ack at the end.
-                                decRecords <- receiveRecords endpoint sRecordKey (fromIntegral size)
-                                writeRecordsToFile name decRecords
-                                let sha256' = sha256sum decRecords
-                                TIO.putStrLn (show sha256')
-                                sendGoodAckMessage endpoint rRecordKey (show sha256')
+                                (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
+                                TIO.putStrLn (show rxSha256Sum)
+                                sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
                                 -- close the connection
                                 closeConnection endpoint
                             )
@@ -169,12 +179,3 @@ receive session appid code = do
                   )
               Right _ -> panic "Could not decode message"
     )
-
-writeRecordsToFile :: FilePath -> [ByteString] -> IO ()
-writeRecordsToFile path records =
-  bracket
-    (openTempFile "./" (takeFileName path))
-    (\(name, htemp) -> do
-        rename name (takeFileName path)
-        hClose htemp)
-    (\(_, htemp) -> BS.hPut htemp (BS.concat records))
