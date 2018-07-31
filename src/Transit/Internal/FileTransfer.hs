@@ -13,11 +13,7 @@ import qualified Crypto.Spake2 as Spake2
 import qualified Data.Aeson as Aeson
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
-import qualified Data.Conduit.Network as CN
 import qualified Conduit as C
-import Data.Conduit ((.|))
-import qualified Crypto.Saltine.Core.SecretBox as SecretBox
-import System.FilePath ((</>))
 
 import qualified MagicWormhole
 
@@ -94,27 +90,6 @@ send session appid password printHelpFn tfd = do
                 Right _ -> throwIO (ConnectionError "error sending transit message")
     )
 
-sendPipeline :: C.MonadResource m =>
-                FilePath
-             -> TCPEndpoint
-             -> SecretBox.Key
-             -> C.ConduitM a c m (Text, ())
-sendPipeline fp (TCPEndpoint s) key =
-  C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
-
-receivePipeline :: C.MonadResource m =>
-                   FilePath
-                -> Int
-                -> TCPEndpoint
-                -> SecretBox.Key
-                -> C.ConduitM a c m (Text, ())
-receivePipeline fp len (TCPEndpoint s) key =
-    CN.sourceSocket s
-    .| assembleRecordC
-    .| decryptC key
-    .| passThroughBytesC len
-    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious ("./" </> fp)
-
 -- | receive a text message or file from the wormhole peer.
 receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
 receive session appid code = do
@@ -126,7 +101,7 @@ receive session appid code = do
   MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
     (\conn -> do
         -- unfortunately, the receiver has no idea which message to expect.
-        -- If the sender is only sending a text message, it gets an offer first
+        -- If the sender is only sending a text message, it gets an offer first.
         -- if the sender is sending a file/directory, then transit comes first
         -- and then offer comes in.
         received <- receiveWormholeMessage conn
