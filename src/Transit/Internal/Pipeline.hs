@@ -7,19 +7,20 @@ where
 import Protolude
 
 import Crypto.Hash (SHA256(..))
+import Data.Conduit ((.|))
+import Data.ByteString.Builder(toLazyByteString, word32BE)
+import Data.Binary.Get (getWord32be, runGet)
+import Crypto.Saltine.Internal.ByteSizes (boxNonce)
+import System.FilePath ((</>))
+
 import qualified Crypto.Hash as Hash
 import qualified Conduit as C
-import Data.Conduit ((.|))
 import qualified Data.Conduit.Network as CN
 import qualified Data.Binary.Builder as BB
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
-import Data.ByteString.Builder(toLazyByteString, word32BE)
-import Data.Binary.Get (getWord32be, runGet)
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
-import Crypto.Saltine.Internal.ByteSizes (boxNonce)
-import System.FilePath ((</>))
 
 import Transit.Internal.Network
 import Transit.Internal.Crypto
@@ -84,7 +85,7 @@ sha256PassThroughC = go $! Hash.hashInitWith SHA256
     go ctx = do
       b <- C.await
       case b of
-        Nothing -> return $! (show (Hash.hashFinalize ctx))
+        Nothing -> return $! show (Hash.hashFinalize ctx)
         Just bs -> do
           C.yield bs
           go $! Hash.hashUpdate ctx bs
@@ -98,11 +99,9 @@ assembleRecordC = do
       let (hdr, pkt) = BS.splitAt 4 bs
       let len = runGet getWord32be (BL.fromStrict hdr)
       getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
-
-getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
-getChunk len bb = go len bb
   where
-    go size res = do
+    getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
+    getChunk size res = do
       b <- C.await
       case b of
         Nothing -> return ()
@@ -114,18 +113,17 @@ getChunk len bb = go len bb
                     C.leftover l
                     C.yield (toS (BB.toLazyByteString res) <> f)
                     assembleRecordC
-                | otherwise -> do
-                    go (size - BS.length bs) (res <> BB.fromByteString bs)
+                | otherwise ->
+                    getChunk (size - BS.length bs) (res <> BB.fromByteString bs)
 
+-- | pass only @n@ bytes through the conduit and then terminate the pipeline.
 passThroughBytesC :: Monad m => Int -> C.ConduitT ByteString ByteString m ()
-passThroughBytesC len = go len
-  where
-    go n | n <= 0 = return ()
-         | otherwise = do
-             b <- C.await
-             case b of
-               Nothing -> return ()
-               Just bs -> do
-                 C.yield bs
-                 go (n - (BS.length bs))
+passThroughBytesC n | n <= 0 = return ()
+                    | otherwise = do
+                        b <- C.await
+                        case b of
+                          Nothing -> return ()
+                          Just bs -> do
+                            C.yield bs
+                            passThroughBytesC (n - BS.length bs)
 
