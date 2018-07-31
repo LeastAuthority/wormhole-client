@@ -29,10 +29,10 @@ import System.Random (randomR, getStdGen)
 import qualified Options.Applicative as Opt
 
 import qualified MagicWormhole
+import qualified Transit
 
 import Paths_hwormhole
 import Options
-import qualified Transit
 
 -- | genWordlist would produce a list of the form
 --   [ ("aardwark", "adroitness"),
