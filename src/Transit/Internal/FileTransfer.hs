@@ -65,7 +65,7 @@ send session appid password printHelpFn tfd = do
                   offerResp <- senderOfferExchange conn filepath
                   case offerResp of
                     Left s -> throwIO (OfferError s)
-                    Right _ -> do
+                    Right _ ->
                       withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
                         ep <- waitAny [asyncServer, asyncClient]
                         let endpoint = snd ep
