@@ -1,9 +1,6 @@
 module Transit.Internal.Pipeline
-  ( encryptC
-  , decryptC
-  , assembleRecordC
-  , sha256PassThroughC
-  , passThroughBytesC
+  ( sendPipeline
+  , receivePipeline
   )
 where
 
@@ -12,6 +9,8 @@ import Protolude
 import Crypto.Hash (SHA256(..))
 import qualified Crypto.Hash as Hash
 import qualified Conduit as C
+import Data.Conduit ((.|))
+import qualified Data.Conduit.Network as CN
 import qualified Data.Binary.Builder as BB
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -20,9 +19,31 @@ import Data.Binary.Get (getWord32be, runGet)
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 import Crypto.Saltine.Internal.ByteSizes (boxNonce)
+import System.FilePath ((</>))
 
 import Transit.Internal.Network
 import Transit.Internal.Crypto
+
+sendPipeline :: C.MonadResource m =>
+                FilePath
+             -> TCPEndpoint
+             -> SecretBox.Key
+             -> C.ConduitM a c m (Text, ())
+sendPipeline fp (TCPEndpoint s) key =
+  C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
+
+receivePipeline :: C.MonadResource m =>
+                   FilePath
+                -> Int
+                -> TCPEndpoint
+                -> SecretBox.Key
+                -> C.ConduitM a c m (Text, ())
+receivePipeline fp len (TCPEndpoint s) key =
+    CN.sourceSocket s
+    .| assembleRecordC
+    .| decryptC key
+    .| passThroughBytesC len
+    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious ("./" </> fp)
 
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 encryptC key = go Saltine.zero
