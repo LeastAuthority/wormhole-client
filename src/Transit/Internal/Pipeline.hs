@@ -16,6 +16,7 @@ import System.FilePath ((</>))
 import qualified Crypto.Hash as Hash
 import qualified Conduit as C
 import qualified Data.Conduit.Network as CN
+import qualified Data.Conduit.Binary as CB
 import qualified Data.Binary.Builder as BB
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
@@ -43,7 +44,7 @@ receivePipeline fp len (TCPEndpoint s) key =
     CN.sourceSocket s
     .| assembleRecordC
     .| decryptC key
-    .| passThroughBytesC len
+    .| CB.isolate len
     .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious ("./" </> fp)
 
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
@@ -115,15 +116,4 @@ assembleRecordC = do
                     assembleRecordC
                 | otherwise ->
                     getChunk (size - BS.length bs) (res <> BB.fromByteString bs)
-
--- | pass only @n@ bytes through the conduit and then terminate the pipeline.
-passThroughBytesC :: Monad m => Int -> C.ConduitT ByteString ByteString m ()
-passThroughBytesC n | n <= 0 = return ()
-                    | otherwise = do
-                        b <- C.await
-                        case b of
-                          Nothing -> return ()
-                          Just bs -> do
-                            C.yield bs
-                            passThroughBytesC (n - BS.length bs)
 
