@@ -3,7 +3,6 @@ module Transit.Internal.Crypto
   , decrypt
   , PlainText
   , CipherText
-  , hkdf
   , deriveKeyFromPurpose
   , Purpose(..)
   )
@@ -22,6 +21,9 @@ import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 type PlainText = ByteString
 type CipherText = ByteString
 
+-- | decrypt the bytestring representing ciphertext block with
+-- the given key. It is assumed that the ciphertext bytestring
+-- is nonce followed by the actual encrypted data.
 decrypt :: SecretBox.Key -> CipherText -> Either Text PlainText
 decrypt key ciphertext =
   -- extract nonce from ciphertext.
@@ -53,13 +55,21 @@ hkdf salt key purpose =
   where
     keySize = ByteSizes.secretBoxKey
 
+-- | Various purpose types for key derivation.
+--
+-- Normally used with 'deriveKeyFromPurpose'.
 data Purpose
   = SenderHandshake
+  -- ^ Purpose type to be used by transit sender.
   | ReceiverHandshake
+  -- ^ Purpose type to be used by transit receiver.
   | SenderRecord
+  -- ^ Purpose type to be used for encrypting records.
   | ReceiverRecord
+  -- ^ Purpose type to be used for decrypting records.
   deriving (Eq, Show)
 
+-- | derive a new purpose-specific key from a master key.
 deriveKeyFromPurpose :: Purpose -> SecretBox.Key -> ByteString
 deriveKeyFromPurpose purpose key =
   hkdf salt key (purposeStr purpose)
