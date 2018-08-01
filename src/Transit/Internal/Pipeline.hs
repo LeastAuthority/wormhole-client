@@ -26,6 +26,10 @@ import qualified Crypto.Saltine.Class as Saltine
 import Transit.Internal.Network
 import Transit.Internal.Crypto
 
+-- | Given the peer network socket and the file path to be sent, this Conduit
+-- pipeline reads the file, encrypts and send it over the network. A sha256
+-- sum is calculated on the input before encryption to compare with the
+-- receiver's decrypted copy.
 sendPipeline :: C.MonadResource m =>
                 FilePath
              -> TCPEndpoint
@@ -34,6 +38,9 @@ sendPipeline :: C.MonadResource m =>
 sendPipeline fp (TCPEndpoint s) key =
   C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
+-- | Receive the encrypted bytestream from a network socket, decrypt it and
+-- write it into a file, also calculating the sha256 sum of the decrypted
+-- output along the way.
 receivePipeline :: C.MonadResource m =>
                    FilePath
                 -> Int
@@ -91,6 +98,12 @@ sha256PassThroughC = go $! Hash.hashInitWith SHA256
           C.yield bs
           go $! Hash.hashUpdate ctx bs
 
+-- | The decryption conduit computation would succeed only if a complete
+-- bytestream that represents an encrypted block of data is given to it.
+-- However, the upstream elements may chunk the data for which one may not
+-- have control of. The encrypted packet on the wire has a 4-byte length
+-- header, so we could first read it and assemble a complete encrypted
+-- block into downstream.
 assembleRecordC :: Monad m => C.ConduitT ByteString ByteString m ()
 assembleRecordC = do
   b <- C.await
