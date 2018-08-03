@@ -152,7 +152,6 @@ data CommunicationError
   | OfferError Text
   | TransitError Text
   | Sha256SumError Text
-  | CouldNotDecrypt Text
   | UnknownPeerMessage Text
   deriving (Eq, Show)
 

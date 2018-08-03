@@ -45,8 +45,7 @@ import Transit.Internal.Network
   , buildDirectHints
   , closeConnection
   , sendBuffer
-  , recvBuffer
-  , CommunicationError(..))
+  , recvBuffer)
 import Transit.Internal.Crypto
   ( encrypt,
     decrypt,
@@ -205,7 +204,5 @@ receiveRecord ep key = do
     lenBytes <- recvBuffer ep 4
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
-    case decrypt key encRecord of
-      Left s -> throwIO (CouldNotDecrypt s)
-      Right pt -> return pt
+    either throwIO (return . fst) (decrypt key encRecord)
 

@@ -12,7 +12,6 @@ import Crypto.Hash (SHA256(..))
 import Data.Conduit ((.|))
 import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Binary.Get (getWord32be, runGet)
-import Crypto.Saltine.Internal.ByteSizes (boxNonce)
 
 import qualified Crypto.Hash as Hash
 import qualified Conduit as C
@@ -24,8 +23,8 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 
-import Transit.Internal.Network (TCPEndpoint(..), CommunicationError(..))
-import Transit.Internal.Crypto (encrypt)
+import Transit.Internal.Network (TCPEndpoint(..))
+import Transit.Internal.Crypto (encrypt, decrypt, CryptoError(..))
 
 -- | Given the peer network socket and the file path to be sent, this Conduit
 -- pipeline reads the file, encrypts and send it over the network. A sha256
@@ -56,9 +55,9 @@ receivePipeline fp len (TCPEndpoint s) key =
     .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious fp
 
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
-encryptC key = go Saltine.zero
+encryptC key = loop Saltine.zero
   where
-    go nonce = do
+    loop nonce = do
       b <- C.await
       case b of
         Nothing -> return ()
@@ -67,37 +66,40 @@ encryptC key = go Saltine.zero
               cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText)))
           C.yield (toS cipherTextSize)
           C.yield cipherText
-          go (Saltine.nudge nonce)
+          loop (Saltine.nudge nonce)
 
 decryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
-decryptC key = loop
+decryptC key = loop Saltine.zero
   where
-    loop = do
+    loop :: MonadIO m => SecretBox.Nonce -> C.ConduitT ByteString ByteString m ()
+    loop seqNum = do
       b <- C.await
       case b of
         Nothing -> return ()
         Just bs -> do
-          let (nonceBytes, ciphertext) = BS.splitAt boxNonce bs
-              nonce = fromMaybe (panic "unable to decode nonce") $
-                Saltine.decode nonceBytes
-              maybePlainText = SecretBox.secretboxOpen key nonce ciphertext
-          case maybePlainText of
-            Just plaintext -> do
-              C.yield plaintext
-              loop
-            Nothing -> throwIO (CouldNotDecrypt "SecretBox failed to open")
+          case decrypt key bs of
+            Right (plainText, nonce) -> do
+              let seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
+                  seqNum' = fromMaybe (panic "nonce decode failed") $
+                            Saltine.decode (toS seqNumLE)
+              if nonce /= seqNum'
+                then throwIO (BadNonce "received out-of-order packets")
+                else do
+                C.yield plainText
+                loop (Saltine.nudge seqNum)
+            Left e -> throwIO e
 
 sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m Text
-sha256PassThroughC = go $! Hash.hashInitWith SHA256
+sha256PassThroughC = loop $! Hash.hashInitWith SHA256
   where
-    go :: (Monad m) => Hash.Context SHA256 -> C.ConduitT ByteString ByteString m Text
-    go ctx = do
+    loop :: (Monad m) => Hash.Context SHA256 -> C.ConduitT ByteString ByteString m Text
+    loop ctx = do
       b <- C.await
       case b of
         Nothing -> return $! show (Hash.hashFinalize ctx)
         Just bs -> do
           C.yield bs
-          go $! Hash.hashUpdate ctx bs
+          loop $! Hash.hashUpdate ctx bs
 
 -- | The decryption conduit computation would succeed only if a complete
 -- bytestream that represents an encrypted block of data is given to it.
