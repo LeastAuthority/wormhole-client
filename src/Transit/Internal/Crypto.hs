@@ -5,6 +5,7 @@ module Transit.Internal.Crypto
   , CipherText
   , deriveKeyFromPurpose
   , Purpose(..)
+  , CryptoError(..)
   )
 where
 
@@ -21,20 +22,27 @@ import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 type PlainText = ByteString
 type CipherText = ByteString
 
+data CryptoError
+  = BadNonce Text
+  | CouldNotDecrypt Text
+  deriving (Eq, Show)
+
+instance Exception CryptoError
+
 -- | decrypt the bytestring representing ciphertext block with
 -- the given key. It is assumed that the ciphertext bytestring
 -- is nonce followed by the actual encrypted data.
-decrypt :: SecretBox.Key -> CipherText -> Either Text PlainText
+decrypt :: SecretBox.Key -> CipherText -> Either CryptoError (PlainText, SecretBox.Nonce)
 decrypt key ciphertext =
   -- extract nonce from ciphertext.
-  let (nonceBytes, ct) = BS.splitAt boxNonce ciphertext
+  let (nonceBytes, record) = BS.splitAt boxNonce ciphertext
       nonce = fromMaybe (panic "unable to decode nonce") $
               Saltine.decode nonceBytes
-      maybePlainText = SecretBox.secretboxOpen key nonce ct
+      maybePlainText = SecretBox.secretboxOpen key nonce record
   in
     case maybePlainText of
-      Just pt -> Right pt
-      Nothing -> Left "decryption error"
+      Just pt -> Right (pt, nonce)
+      Nothing -> Left (CouldNotDecrypt "SecretBox failed to open")
 
 -- | encrypt the given chunk with the given secretbox key and nonce.
 -- Saltine's nonce seem represented as a big endian bytestring.
