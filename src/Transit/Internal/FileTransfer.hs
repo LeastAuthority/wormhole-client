@@ -15,6 +15,8 @@ import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 import qualified Conduit as C
 
+import Network.Socket (socketPort)
+
 import qualified MagicWormhole
 
 import Transit.Internal.Network
@@ -78,8 +80,9 @@ send session appid password printHelpFn tfd = do
             MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer)))
           TFile filepath -> do
             -- exchange abilities
-            portnum <- allocateTcpPort
-            withAsync (startServer portnum) $ \asyncServer -> do
+            sock' <- tcpListener
+            portnum <- socketPort sock'
+            withAsync (startServer sock') $ \asyncServer -> do
               transitResp <- transitExchange conn portnum
               case transitResp of
                 Left s -> throwIO (TransitError s)
@@ -137,9 +140,10 @@ receive session appid code = do
               Left err -> throwIO (TransitError (toS err))
               Right (Transit peerAbilities peerHints) -> do
                 let abilities' = [Ability DirectTcpV1]
-                portnum <- allocateTcpPort
+                s <- tcpListener
+                portnum <- socketPort s
                 hints' <- buildDirectHints portnum
-                withAsync (startServer portnum) $ \asyncServer -> do
+                withAsync (startServer s) $ \asyncServer -> do
                   sendTransitMsg conn abilities' hints'
                   -- now expect an offer message
                   offerMsg <- receiveWormholeMessage conn
