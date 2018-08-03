@@ -2,7 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Transit.Internal.Network
-  ( allocateTcpPort
+  ( tcpListener
   , buildDirectHints
   , sendBuffer
   , recvBuffer
@@ -22,7 +22,6 @@ import Network.Socket
   ( addrSocketType
   , PortNumber
   , addrFlags
-  , socketPort
   , addrAddress
   , addrProtocol
   , addrFamily
@@ -58,15 +57,15 @@ import System.Timeout
 import qualified Control.Exception as E
 import qualified Data.Text.IO as TIO
 
-allocateTcpPort :: IO PortNumber
-allocateTcpPort = E.bracket start close socketPort
-  where start = do
-          let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-          addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show defaultPort))
-          sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-          _ <- setSocketOption sock' ReuseAddr 1
-          _ <- bind sock' (addrAddress addr)
-          return sock'
+tcpListener :: IO Socket
+tcpListener = do
+  let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
+  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show defaultPort))
+  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  setSocketOption sock' ReuseAddr 1
+  bind sock' (addrAddress addr)
+  listen sock' 5
+  return sock'
 
 type Hostname = Text
 
@@ -135,14 +134,8 @@ recvBuffer ep = recv (sock ep)
 closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = close (sock ep)
 
-startServer :: PortNumber -> IO TCPEndpoint
-startServer portnum = do
-  let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show portnum))
-  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  _ <- setSocketOption sock' ReuseAddr 1
-  _ <- bind sock' (addrAddress addr)
-  listen sock' 5
+startServer :: Socket -> IO TCPEndpoint
+startServer sock' = do
   (conn, _) <- accept sock'
   close sock'
   return (TCPEndpoint conn)
