@@ -17,10 +17,20 @@ with the Python `wormhole` application.
 We need a version of [`haskell-magic-wormhole`][2] from git at the moment. This will
 go away as soon as a new release is uploaded into hackage.
 
-In order to build the code, we need Cabal 2.2 at the moment. A stack yaml file will
-be provided soon, for those who use `stack`.
+If you have cabal-install version < 2.2, then it is recommended to use cabal sandbox.
 
-The build steps using the cabal project (supported in cabal 2.x) is as follows:
+```
+cd wormhole-client
+cabal sandbox init
+cabal sandbox add-source /path/to/haskell-magic-wormhole/sources
+cabal install --only-dependencies --enable-tests
+cabal build
+```
+
+cabal sandbox is going away in a future release and will get a sandbox-like feature
+automatically when one installs and builds dependencies. These features are available
+today with cabal-install version >= 2.2 with the `new-*` commands. If you are using
+cabal-install version >= 2.2, then here are the build steps:
 
 1. create a top level directory called `wormhole`
 2. `cd wormhole`
@@ -41,7 +51,6 @@ cabal new-run hwormhole:hwormhole-exe -- send --text foobar
 cabal new-run hwormhole:hwormhole-exe -- send /path/to/foobar.txt
 cabal new-run hwormhole:hwormhole-exe -- receive
 ```
-
 There is a `--help` command. It works for subcommands as well.
 
 ## What works at the moment
