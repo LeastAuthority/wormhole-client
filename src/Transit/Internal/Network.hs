@@ -154,6 +154,7 @@ data CommunicationError
   | Sha256SumError Text
   | CouldNotDecrypt Text
   | UnknownPeerMessage Text
+  | BadNonce Text
   deriving (Eq, Show)
 
 instance Exception CommunicationError

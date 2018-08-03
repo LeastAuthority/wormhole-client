@@ -70,9 +70,10 @@ encryptC key = go Saltine.zero
           go (Saltine.nudge nonce)
 
 decryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
-decryptC key = loop
+decryptC key = loop Saltine.zero
   where
-    loop = do
+    loop :: MonadIO m => SecretBox.Nonce -> C.ConduitT ByteString ByteString m ()
+    loop seqNum = do
       b <- C.await
       case b of
         Nothing -> return ()
@@ -80,12 +81,20 @@ decryptC key = loop
           let (nonceBytes, ciphertext) = BS.splitAt boxNonce bs
               nonce = fromMaybe (panic "unable to decode nonce") $
                 Saltine.decode nonceBytes
-              maybePlainText = SecretBox.secretboxOpen key nonce ciphertext
-          case maybePlainText of
-            Just plaintext -> do
-              C.yield plaintext
-              loop
-            Nothing -> throwIO (CouldNotDecrypt "SecretBox failed to open")
+              -- we need to do this because we have to interoperate with python
+              -- client which encodes nonce in little endian bytestring.
+              seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
+              seqNum' = fromMaybe (panic "seqnum decode failed") $
+                        Saltine.decode seqNumLE
+          if nonce /= seqNum'
+            then throwIO (BadNonce "received out-of-order packet")
+            else do
+            let maybePlainText = SecretBox.secretboxOpen key nonce ciphertext
+            case maybePlainText of
+              Just plaintext -> do
+                C.yield plaintext
+                loop (Saltine.nudge seqNum)
+              Nothing -> throwIO (CouldNotDecrypt "SecretBox failed to open")
 
 sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m Text
 sha256PassThroughC = go $! Hash.hashInitWith SHA256
