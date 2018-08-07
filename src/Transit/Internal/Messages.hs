@@ -81,7 +81,7 @@ instance FromJSON ConnectionHint where
                                   _ -> name }
 
 data Ack = FileAck Text
-         | MsgAck Text
+         | MessageAck Text
          deriving (Eq, Show, Generic)
 
 instance ToJSON Ack where
