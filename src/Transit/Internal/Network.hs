@@ -104,8 +104,8 @@ data TCPEndpoint
     { sock :: Socket
     } deriving (Show, Eq)
 
-tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
+tryToConnect :: ConnectionHint -> IO (Maybe TCPEndpoint)
+tryToConnect (Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
   addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
@@ -120,11 +120,8 @@ tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
       case result of
         Left (e :: E.SomeException) -> throwIO e
         Right _ -> return (TCPEndpoint so)
-tryToConnect (Ability DirectTcpV1) _ = do
+tryToConnect _ = do
   TIO.putStrLn "Tor hints and Relays are not supported yet"
-  return Nothing
-tryToConnect (Ability RelayV1) _ = do
-  TIO.putStrLn "Relays are not supported yet"
   return Nothing
 
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
@@ -144,17 +141,23 @@ startServer sock' = do
 
 data CommunicationError
   = ConnectionError Text
+  -- ^ We could not establish a socket connection.
   | OfferError Text
+  -- ^ Clients could not exchange offer message.
   | TransitError Text
+  -- ^ There was an error in transit protocol exchanges.
   | Sha256SumError Text
+  -- ^ Sender got back a wrong sha256sum from the receiver.
   | UnknownPeerMessage Text
+  -- ^ We could not identify the message from peer.
   deriving (Eq, Show)
 
 instance Exception CommunicationError
 
-startClient :: [Ability] -> [ConnectionHint] -> IO TCPEndpoint
-startClient as hs = do
-  maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
+startClient :: [ConnectionHint] -> IO TCPEndpoint
+startClient hs = do
+  let sortedHs = sort hs
+  maybeClientEndPoint <- asum (map tryToConnect sortedHs)
   case maybeClientEndPoint of
     Just ep -> return ep
     Nothing -> throwIO (ConnectionError "Peer socket is not active")
