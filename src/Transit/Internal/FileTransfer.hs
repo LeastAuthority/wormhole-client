@@ -99,7 +99,7 @@ send session appid password printHelpFn tfd = do
                   case offerResp of
                     Left s -> throwIO (OfferError s)
                     Right _ ->
-                      withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
+                      withAsync (startClient peerHints) $ \asyncClient -> do
                         ep <- waitAny [asyncServer, asyncClient]
                         let endpoint = snd ep
                         -- 0. derive transit key
@@ -166,7 +166,7 @@ receive session appid code = do
                       let ans = Answer (FileAck "ok")
                       sendWormholeMessage conn (Aeson.encode ans)
                       -- runTransitProtocol peerAbilities peerHints asyncServer
-                      withAsync (startClient peerAbilities peerHints) $ \asyncClient -> do
+                      withAsync (startClient peerHints) $ \asyncClient -> do
                         ep <- waitAny [asyncServer, asyncClient]
                         let endpoint = snd ep
                         -- 0. derive transit key
