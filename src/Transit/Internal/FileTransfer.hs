@@ -76,6 +76,13 @@ send session appid password printHelpFn tfd = do
           TMsg msg -> do
             let offer = MagicWormhole.Message msg
             MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer)))
+            -- wait for "answer" message with "message_ack" key
+            MagicWormhole.PlainText rxTransitMsg <- atomically $ MagicWormhole.receiveMessage conn
+            case Aeson.eitherDecode (toS rxTransitMsg) of
+              Left s -> throwIO (TransitError (show s))
+              Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
+                                               | otherwise -> throwIO (TransitError "Message ack failed")
+              Right s -> throwIO (TransitError (show s))
           TFile filepath -> do
             -- exchange abilities
             portnum <- allocateTcpPort
@@ -129,9 +136,12 @@ receive session appid code = do
         -- and then offer comes in.
         received <- receiveWormholeMessage conn
         case Aeson.eitherDecode (toS received) of
-          Right (MagicWormhole.Message message) -> TIO.putStrLn message
-          Right (MagicWormhole.File _ _) -> throwIO (ConnectionError "did not expect a file offer")
-          Right (MagicWormhole.Directory _ _ _ _ _) -> throwIO (ConnectionError "did not expect a file offer")
+          Right (MagicWormhole.Message message) -> do
+            -- TODO: send answer message with message_ack
+            TIO.putStrLn message
+          Right (MagicWormhole.File _ _) -> do
+            -- TODO: send answer with message_ack not_ok
+            throwIO (ConnectionError "did not expect a file offer")
           -- ok, we received the Transit Message, send back a transit message
           Left _ ->
             case Aeson.eitherDecode (toS received) of
