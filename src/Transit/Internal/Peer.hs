@@ -31,6 +31,7 @@ import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.FilePath (takeFileName)
+import Network.Socket (PortNumber)
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
