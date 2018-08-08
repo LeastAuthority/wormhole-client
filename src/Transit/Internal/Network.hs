@@ -105,10 +105,7 @@ tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
   withSocketsDo $ do
   addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  timeout 10000000 (do
-                       testAddress sock' $ addrAddress addr
-                       -- return $ TCPEndpoint h a sock'
-                       return $ TCPEndpoint sock')
+  timeout 10000000 (testAddress sock' $ addrAddress addr)
   where
     resolve host' port' = do
       let hints' = defaultHints { addrSocketType = Stream }
@@ -118,7 +115,7 @@ tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
       result <- try $ connect so addr
       case result of
         Left (e :: E.SomeException) -> throwIO e
-        Right _ -> return ()
+        Right _ -> return (TCPEndpoint so)
 tryToConnect (Ability DirectTcpV1) _ = do
   TIO.putStrLn "Tor hints and Relays are not supported yet"
   return Nothing
