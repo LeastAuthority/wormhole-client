@@ -65,6 +65,12 @@ data ConnectionHint
           , hints :: [Hint] }
   deriving (Eq, Show, Generic)
 
+instance Ord ConnectionHint where
+  Direct _  `compare` Direct _  = EQ
+  Direct _  `compare` Relay _ _ = LT
+  Relay _ _ `compare` Relay _ _ = EQ
+  Relay _ _ `compare` Direct _  = GT
+
 instance ToJSON ConnectionHint where
   toJSON = genericToJSON
     defaultOptions { sumEncoding = UntaggedValue
