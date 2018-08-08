@@ -20,7 +20,7 @@ import Network.Socket (socketPort)
 import qualified MagicWormhole
 
 import Transit.Internal.Network
-  ( allocateTcpPort
+  ( tcpListener
   , buildDirectHints
   , startServer
   , startClient

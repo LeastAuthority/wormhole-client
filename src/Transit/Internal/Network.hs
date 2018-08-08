@@ -2,15 +2,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Transit.Internal.Network
-  ( tcpListener
-  , buildDirectHints
+  (
+    -- * build direct hints from port number and the interfaces on the host.
+    buildDirectHints
+    -- * low level bytestring buffer send/receive over a socket
   , sendBuffer
   , recvBuffer
+    -- * TCP Endpoint
   , closeConnection
   , TCPEndpoint(..)
-  , PortNumber
+    -- * TCP Listener that listens on a random port, Server and Client
+  , tcpListener
   , startServer
   , startClient
+    -- * Error
   , CommunicationError(..)
   ) where
 
