@@ -104,12 +104,12 @@ data TCPEndpoint
     { sock :: Socket
     } deriving (Show, Eq)
 
-tryToConnect :: ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect (Direct (Hint DirectTcpV1 _ host portnum)) =
+tryToConnect :: Hint -> IO (Maybe TCPEndpoint)
+tryToConnect (Hint _ _ host portnum) =
   withSocketsDo $ do
   addr <- resolve (toS host) (show portnum)
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  timeout 10000000 (testAddress sock' $ addrAddress addr)
+  timeout 2000000 (testAddress sock' $ addrAddress addr)
   where
     resolve host' port' = do
       let hints' = defaultHints { addrSocketType = Stream }
@@ -120,9 +120,6 @@ tryToConnect (Direct (Hint DirectTcpV1 _ host portnum)) =
       case result of
         Left (e :: E.SomeException) -> throwIO e
         Right _ -> return (TCPEndpoint so)
-tryToConnect _ = do
-  TIO.putStrLn "Tor hints and Relays are not supported yet"
-  return Nothing
 
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
 sendBuffer ep = send (sock ep)
@@ -157,7 +154,17 @@ instance Exception CommunicationError
 startClient :: [ConnectionHint] -> IO TCPEndpoint
 startClient hs = do
   let sortedHs = sort hs
-  maybeClientEndPoint <- asum (map tryToConnect sortedHs)
-  case maybeClientEndPoint of
+      (dHs, rHs) = segregateHints sortedHs
+  (ep1, ep2) <- concurrently (asum (map tryToConnect dHs)) (asum (map tryToConnect rHs))
+  let maybeEndPoint = asum [ep1, ep2]
+  case maybeEndPoint of
     Just ep -> return ep
     Nothing -> throwIO (ConnectionError "Peer socket is not active")
+  where
+    -- (a -> b -> b) -> b -> [a] -> b
+    segregateHints :: [ConnectionHint] -> ([Hint], [Hint])
+    segregateHints = foldr go ([],[])
+    go :: ConnectionHint -> ([Hint], [Hint]) -> ([Hint], [Hint])
+    go hint (dhs, rhs) = case hint of
+                           Direct h -> (h:dhs, rhs)
+                           Relay _ hs' -> (dhs, hs' <> rhs)
