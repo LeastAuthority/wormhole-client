@@ -87,6 +87,7 @@ test-suite hwormhole-tests
                     , hspec
                     , saltine
                     , hwormhole
+                    , magic-wormhole
                     , hedgehog
   other-modules:      ProtocolTests
                     , MessagesTests
