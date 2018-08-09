@@ -4,6 +4,7 @@ module Transit.Internal.Peer
   , makeReceiverHandshake
   , makeSenderRecordKey
   , makeReceiverRecordKey
+  , makeSenderRelayHandshake
   , transitExchange
   , senderOfferExchange
   , senderHandshakeExchange
@@ -59,14 +60,24 @@ makeSenderHandshake key =
   (toS @Text @ByteString "transit sender ") <> hexid <> (toS @Text @ByteString " ready\n\n")
   where
     subkey = deriveKeyFromPurpose SenderHandshake key
-    hexid = (toS (toLower (toS @ByteString @Text (hex subkey))))
+    hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
 
 makeReceiverHandshake :: SecretBox.Key -> ByteString
 makeReceiverHandshake key =
   (toS @Text @ByteString "transit receiver ") <> hexid <> (toS @Text @ByteString " ready\n\n")
   where
     subkey = deriveKeyFromPurpose ReceiverHandshake key
-    hexid = (toS (toLower (toS @ByteString @Text (hex subkey))))
+    hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
+
+-- | create sender's relay handshake bytestring
+-- "please relay HEXHEX for side XXXXX\n"
+makeSenderRelayHandshake :: SecretBox.Key -> MagicWormhole.Side -> ByteString
+makeSenderRelayHandshake key (MagicWormhole.Side side) =
+  (toS @Text @ByteString "please relay ") <> token <> (toS @Text @ByteString " for side ") <> sideBytes <> "\n"
+  where
+    subkey = deriveKeyFromPurpose SenderRelayHandshake key
+    token = toS (toLower (toS @ByteString @Text (hex subkey)))
+    sideBytes = toS @Text @ByteString side
 
 makeSenderRecordKey :: SecretBox.Key -> SecretBox.Key
 makeSenderRecordKey key =
