@@ -50,7 +50,7 @@ connectionHintGen = Gen.choice
 ackGen :: MonadGen m => m Ack
 ackGen = Gen.choice
   [ FileAck <$> Gen.text (Range.linear 0 100) Gen.ascii
-  , MsgAck <$> Gen.text (Range.linear 0 100) Gen.ascii
+  , MessageAck <$> Gen.text (Range.linear 0 100) Gen.ascii
   ]
 
 transitMsgGen :: MonadGen m => m TransitMsg
