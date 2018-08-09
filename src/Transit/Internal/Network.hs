@@ -52,14 +52,10 @@ import Network.Info
   , NetworkInterface(..)
   , IPv4(..)
   )
-import Network.Socket.ByteString
-  ( send
-  , recv
-  )
-import System.Timeout
-  ( timeout
-  )
-import qualified Control.Exception as E
+
+import Network.Socket.ByteString (send, recv)
+import System.Timeout (timeout)
+
 import qualified Data.Text.IO as TIO
 
 tcpListener :: IO Socket
@@ -105,21 +101,23 @@ data TCPEndpoint
     } deriving (Show, Eq)
 
 tryToConnect :: Hint -> IO (Maybe TCPEndpoint)
-tryToConnect (Hint _ _ host portnum) =
-  withSocketsDo $ do
-  addr <- resolve (toS host) (show portnum)
-  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  timeout 2000000 (testAddress sock' $ addrAddress addr)
+tryToConnect h@(Hint _ _ host portnum) =
+  timeout 1000000 (bracketOnError
+                    (init host portnum)
+                    (\(sock', _) -> close sock')
+                    (\(sock', addr) -> do
+                        connect sock' $ addrAddress addr
+                        return (TCPEndpoint sock')))
   where
+    init host' port' = withSocketsDo $ do
+      TIO.putStrLn $ "trying to connect to " <> (show h)
+      addr <- resolve (toS host') (show port')
+      sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+      return (sock', addr)
     resolve host' port' = do
       let hints' = defaultHints { addrSocketType = Stream }
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
-    testAddress so addr = do
-      result <- try $ connect so addr
-      case result of
-        Left (e :: E.SomeException) -> throwIO e
-        Right _ -> return (TCPEndpoint so)
 
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
 sendBuffer ep = send (sock ep)
