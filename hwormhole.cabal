@@ -82,6 +82,7 @@ test-suite hwormhole-tests
                     , binary
                     , binary-conduit
                     , conduit-extra
+                    , text
                     , protolude
                     , hspec
                     , saltine
