@@ -1,6 +1,8 @@
 module Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline
+  -- * for tests
+  , assembleRecordC
   )
 where
 
@@ -109,16 +111,19 @@ assembleRecordC = do
   b <- C.await
   case b of
     Nothing -> return ()
-    Just bs -> do
-      let (hdr, pkt) = BS.splitAt 4 bs
-      let len = runGet getWord32be (BL.fromStrict hdr)
-      getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
+    Just bs | BS.length bs < 4 -> do
+                C.leftover bs
+                assembleRecordC
+            | otherwise -> do
+                let (hdr, pkt) = BS.splitAt 4 bs
+                let len = runGet getWord32be (BL.fromStrict hdr)
+                getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
   where
     getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
     getChunk size res = do
       b <- C.await
       case b of
-        Nothing -> return ()
+        Nothing -> C.yield (toS (BB.toLazyByteString res))
         Just bs | size == BS.length bs -> do
                     C.yield $! toS (BB.toLazyByteString res) <> bs
                     assembleRecordC

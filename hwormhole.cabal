@@ -82,6 +82,10 @@ test-suite hwormhole-tests
   ghc-options: -Wall -Werror=incomplete-patterns
   build-depends:      base >=4.6 && <5
                     , aeson >=1.4 && <2
+                    , conduit
+                    , binary
+                    , binary-conduit
+                    , conduit-extra
                     , protolude
                     , hspec
                     , saltine
@@ -89,5 +93,6 @@ test-suite hwormhole-tests
                     , hedgehog
   other-modules:      ProtocolTests
                     , MessagesTests
+                    , PipelineTests
                     , Generator
   default-language:   Haskell2010
