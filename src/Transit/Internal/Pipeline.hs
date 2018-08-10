@@ -107,29 +107,27 @@ sha256PassThroughC = go $! Hash.hashInitWith SHA256
 -- block into downstream.
 assembleRecordC :: Monad m => C.ConduitT ByteString ByteString m ()
 assembleRecordC = do
-  b <- C.await
-  case b of
-    Nothing -> return ()
-    Just bs | BS.length bs < 4 -> do
-                C.leftover bs
-                assembleRecordC
-            | otherwise -> do
-                let (hdr, pkt) = BS.splitAt 4 bs
-                let len = runGet getWord32be (BL.fromStrict hdr)
-                getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
-                assembleRecordC
+  hdr <- getChunk 4
+  let len = runGet getWord32be (BL.fromStrict hdr)
+  packet <- getChunk (fromIntegral len)
+  C.yield packet
+  assembleRecordC
   where
-    getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
-    getChunk size res = do
+    getChunk :: Monad m => Int -> C.ConduitT ByteString ByteString m ByteString
+    getChunk size = go size BB.empty
+    go :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ByteString
+    go size res = do
+      let residue = BL.toStrict . BB.toLazyByteString $ res
       b <- C.await
       case b of
-        Nothing -> C.yield (toS (BB.toLazyByteString res))
-        Just bs | size == BS.length bs ->
-                    C.yield $! toS (BB.toLazyByteString res) <> bs
-                | size < BS.length bs -> do
+        Nothing -> return residue
+        Just bs | size < BS.length bs -> do
                     let (f, l) = BS.splitAt size bs
                     C.leftover l
-                    C.yield (toS (BB.toLazyByteString res) <> f)
-                | otherwise ->
-                    getChunk (size - BS.length bs) (res <> BB.fromByteString bs)
+                    return $ residue <> f
+                | size == BS.length bs -> do
+                    return (residue <> bs)
+                | otherwise -> do
+                    let want = size - BS.length bs
+                    go want $ BB.fromByteString (residue <> bs)
 
