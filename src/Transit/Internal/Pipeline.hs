@@ -13,7 +13,6 @@ import Data.Conduit ((.|))
 import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Binary.Get (getWord32be, runGet)
 import Crypto.Saltine.Internal.ByteSizes (boxNonce)
-import System.FilePath ((</>))
 
 import qualified Crypto.Hash as Hash
 import qualified Conduit as C
@@ -54,7 +53,7 @@ receivePipeline fp len (TCPEndpoint s) key =
     .| assembleRecordC
     .| decryptC key
     .| CB.isolate len
-    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious ("./" </> fp)
+    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious fp
 
 encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 encryptC key = go Saltine.zero
