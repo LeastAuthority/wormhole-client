@@ -117,20 +117,19 @@ assembleRecordC = do
                 let (hdr, pkt) = BS.splitAt 4 bs
                 let len = runGet getWord32be (BL.fromStrict hdr)
                 getChunk (fromIntegral len - BS.length pkt) (BB.fromByteString pkt)
+                assembleRecordC
   where
     getChunk :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ()
     getChunk size res = do
       b <- C.await
       case b of
         Nothing -> C.yield (toS (BB.toLazyByteString res))
-        Just bs | size == BS.length bs -> do
+        Just bs | size == BS.length bs ->
                     C.yield $! toS (BB.toLazyByteString res) <> bs
-                    assembleRecordC
                 | size < BS.length bs -> do
                     let (f, l) = BS.splitAt size bs
                     C.leftover l
                     C.yield (toS (BB.toLazyByteString res) <> f)
-                    assembleRecordC
                 | otherwise ->
                     getChunk (size - BS.length bs) (res <> BB.fromByteString bs)
 
