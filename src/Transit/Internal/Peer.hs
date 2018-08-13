@@ -6,7 +6,10 @@ module Transit.Internal.Peer
   , makeReceiverRecordKey
   , makeSenderRelayHandshake
   , transitExchange
-  , senderOfferExchange
+  , senderFileOfferExchange
+  , sendOffer
+  , sendMessageAck
+  , receiveMessageAck
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendTransitMsg
@@ -117,10 +120,27 @@ sendTransitMsg conn abilities' hints' = do
   -- send the transit message (dictionary with key as "transit" and value as abilities)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
+sendOffer :: MagicWormhole.EncryptedConnection -> MagicWormhole.Offer -> IO ()
+sendOffer conn offer =
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode offer)))
 
-senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
-senderOfferExchange conn path = do
-  (_,rx) <- concurrently sendOffer receiveResponse
+receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO ()
+receiveMessageAck conn = do
+  MagicWormhole.PlainText rxTransitMsg <- atomically $ MagicWormhole.receiveMessage conn
+  case eitherDecode (toS rxTransitMsg) of
+    Left s -> throwIO (TransitError (show s))
+    Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
+                                     | otherwise -> throwIO (TransitError "Message ack failed")
+    Right s -> throwIO (TransitError (show s))
+
+sendMessageAck :: MagicWormhole.EncryptedConnection -> Text -> IO ()
+sendMessageAck conn msg = do
+  let ackMessage = Answer (MessageAck msg)
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode ackMessage)))
+
+senderFileOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
+senderFileOfferExchange conn path = do
+  (_,rx) <- concurrently sendFileOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
     Left s -> return $ Left (toS s)
@@ -130,11 +150,11 @@ senderOfferExchange conn path = do
     Right (Answer (MessageAck _)) -> return $ Left "expected file ack, got message ack instead"
     Right (Transit _ _) -> return $ Left "unexpected transit message"
   where
-    sendOffer :: IO ()
-    sendOffer = do
+    sendFileOffer :: IO ()
+    sendFileOffer = do
       size <- getFileSize path
       let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
-      MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
+      sendOffer conn fileOffer
     receiveResponse :: IO ByteString
     receiveResponse = do
       MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
