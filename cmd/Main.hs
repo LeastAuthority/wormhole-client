@@ -138,6 +138,38 @@ send session appid password tfd = do
           Transit.TFile filepath -> Transit.sendFile conn appid filepath
     )
 
+-- | receive a text message or file from the wormhole peer.
+receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
+receive session appid code = do
+  -- establish the connection
+  let codeSplit = Text.split (=='-') code
+  let (Just nameplate) = headMay codeSplit
+  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
+  peer <- MagicWormhole.open session mailbox
+  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
+    (\conn -> do
+        -- unfortunately, the receiver has no idea which message to expect.
+        -- If the sender is only sending a text message, it gets an offer first.
+        -- if the sender is sending a file/directory, then transit comes first
+        -- and then offer comes in. `Transit.receiveOffer' will attempt to interpret
+        -- the bytestring as an offer message. If that fails, it passes the raw bytestring
+        -- as a Left value so that we can try to decode it as a TransitMsg.
+        maybeOffer <- Transit.receiveOffer conn
+        case maybeOffer of
+          Right (MagicWormhole.Message message) -> do
+            Transit.sendMessageAck conn "ok"
+            TIO.putStrLn message
+          Right (MagicWormhole.File _ _) -> do
+            Transit.sendMessageAck conn "not_ok"
+            throwIO (Transit.ConnectionError "did not expect a file offer")
+          -- ok, we received the Transit Message, send back a transit message
+          Left received ->
+            case (Transit.decodeTransitMsg (toS received)) of
+              Left e -> throwIO e
+              Right transitMsg ->
+                Transit.receiveFile conn appid transitMsg
+    )
+
 main :: IO ()
 main = do
   options <- Opt.execParser opts
@@ -150,7 +182,7 @@ main = do
       send session appID (toS password) tfd
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
       code <- getWormholeCode session wordList maybeCode
-      Transit.receive session appID code
+      receive session appID code
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
       getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
