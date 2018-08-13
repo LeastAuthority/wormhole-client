@@ -67,7 +67,7 @@ sendFile conn appid filepath = do
   sock' <- tcpListener
   portnum <- socketPort sock'
   withAsync (startServer sock') $ \asyncServer -> do
-    transitResp <- transitExchange conn portnum
+    transitResp <- senderTransitExchange conn portnum
     case transitResp of
       Left s -> throwIO (TransitError s)
       Right (Transit peerAbilities peerHints) -> do
