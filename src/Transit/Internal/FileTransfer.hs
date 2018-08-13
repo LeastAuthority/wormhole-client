@@ -2,16 +2,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Transit.Internal.FileTransfer
   ( sendFile
-  , receive
+  , receiveFile
   , MessageType(..)
   )
 where
 
 import Protolude
 
-import qualified Crypto.Spake2 as Spake2
 import qualified Data.Aeson as Aeson
-import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 import qualified Conduit as C
 
@@ -146,38 +144,3 @@ receiveFile conn appid (Transit peerAbilities peerHints) = do
               closeConnection endpoint
       Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
 receiveFile _ _ _ = throwIO (UnknownPeerMessage "Could not recognize the message")
-
--- | receive a text message or file from the wormhole peer.
-receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
-receive session appid code = do
-  -- establish the connection
-  let codeSplit = Text.split (=='-') code
-  let (Just nameplate) = headMay codeSplit
-  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
-  peer <- MagicWormhole.open session mailbox
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
-    (\conn -> do
-        -- unfortunately, the receiver has no idea which message to expect.
-        -- If the sender is only sending a text message, it gets an offer first.
-        -- if the sender is sending a file/directory, then transit comes first
-        -- and then offer comes in.
-        maybeOffer <- receiveOffer conn
-        case maybeOffer of
-          Right (MagicWormhole.Message message) -> do
-            sendMessageAck conn "ok"
-            TIO.putStrLn message
-          Right (MagicWormhole.File _ _) -> do
-            sendMessageAck conn "not_ok"
-            throwIO (ConnectionError "did not expect a file offer")
-          Right (MagicWormhole.Directory _ _ _ _ _) -> do
-            -- TODO: send answer with message_ack not_ok
-            throwIO (ConnectionError "did not expect a directory offer")
-          -- ok, we received the Transit Message, send back a transit message
-          Left received ->
-            case (decodeTransitMsg (toS received)) of
-              Left e -> throwIO e
-              Right transitMsg@(Transit _ _) ->
-                receiveFile conn appid transitMsg
-              Right e ->
-                throwIO (UnknownPeerMessage (show e))
-    )

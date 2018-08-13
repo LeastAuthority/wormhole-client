@@ -51,7 +51,8 @@ import Transit.Internal.Network
   , buildDirectHints
   , closeConnection
   , sendBuffer
-  , recvBuffer)
+  , recvBuffer
+  , CommunicationError(..))
 import Transit.Internal.Crypto
   ( encrypt,
     decrypt,
