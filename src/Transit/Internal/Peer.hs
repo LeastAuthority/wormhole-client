@@ -5,7 +5,7 @@ module Transit.Internal.Peer
   , makeSenderRecordKey
   , makeReceiverRecordKey
   , makeSenderRelayHandshake
-  , transitExchange
+  , senderTransitExchange
   , senderFileOfferExchange
   , sendOffer
   , receiveOffer
@@ -96,8 +96,8 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-transitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-transitExchange conn portnum = do
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
+senderTransitExchange conn portnum = do
   let abilities' = [Ability DirectTcpV1]
   hints' <- buildDirectHints portnum
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
