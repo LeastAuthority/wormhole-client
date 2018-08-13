@@ -27,6 +27,7 @@ import qualified System.Console.Haskeline as H
 import qualified System.Console.Haskeline.Completion as HC
 import System.Random (randomR, getStdGen)
 import qualified Options.Applicative as Opt
+import qualified Crypto.Spake2 as Spake2
 
 import qualified MagicWormhole
 import qualified Transit
@@ -109,6 +110,34 @@ printSendHelpText passcode = do
   TIO.putStrLn ""
   TIO.putStrLn $ "wormhole receive " <> passcode
 
+type Password = ByteString
+
+-- | Given the magic-wormhole session, appid, password, a function to print a helpful message
+-- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
+-- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
+-- the wormhole securely. The receiver, on successfully receiving the file, would compute
+-- a sha256 sum of the encrypted file and sends it across to the sender, along with an
+-- acknowledgement, which the sender can verify.
+send :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO ()
+send session appid password tfd = do
+  -- first establish a wormhole session with the receiver and
+  -- then talk the filetransfer protocol over it as follows.
+  nameplate <- MagicWormhole.allocate session
+  mailbox <- MagicWormhole.claim session nameplate
+  peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
+  let (MagicWormhole.Nameplate n) = nameplate
+  printSendHelpText $ toS n <> "-" <> toS password
+  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
+    (\conn ->
+        case tfd of
+          Transit.TMsg msg -> do
+            let offer = MagicWormhole.Message msg
+            Transit.sendOffer conn offer
+            -- wait for "answer" message with "message_ack" key
+            Transit.receiveMessageAck conn
+          Transit.TFile filepath -> Transit.sendFile conn appid filepath
+    )
+
 main :: IO ()
 main = do
   options <- Opt.execParser opts
@@ -118,7 +147,7 @@ main = do
   case cmd options of
     Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
       password <- allocatePassword wordList
-      Transit.send session appID (toS password) printSendHelpText tfd
+      send session appID (toS password) tfd
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
       code <- getWormholeCode session wordList maybeCode
       Transit.receive session appID code

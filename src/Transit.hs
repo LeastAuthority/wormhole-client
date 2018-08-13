@@ -19,11 +19,13 @@
 -- so that each message is encrypted using NaCl SecretBox.
 --
 module Transit
-  ( FileTransfer.send
+  ( FileTransfer.sendFile
   , FileTransfer.receive
   , FileTransfer.MessageType(..)
+  , Peer.sendOffer
+  , Peer.receiveMessageAck
   )
 where
 
 import qualified Transit.Internal.FileTransfer as FileTransfer
-
+import qualified Transit.Internal.Peer as Peer
