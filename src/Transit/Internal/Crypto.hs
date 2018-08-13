@@ -36,26 +36,27 @@ decrypt :: SecretBox.Key -> CipherText -> Either CryptoError (PlainText, SecretB
 decrypt key ciphertext =
   -- extract nonce from ciphertext.
   let (nonceBytes, record) = BS.splitAt boxNonce ciphertext
-      nonce = fromMaybe (panic "unable to decode nonce") $
-              Saltine.decode nonceBytes
-      maybePlainText = SecretBox.secretboxOpen key nonce record
+      maybeResult = Saltine.decode nonceBytes >>=
+                    \nonce -> SecretBox.secretboxOpen key nonce record >>=
+                    \plaintext -> return (plaintext, nonce)
   in
-    case maybePlainText of
-      Just plaintext -> Right (plaintext, nonce)
+    case maybeResult of
+      Just (plaintext, nonce) -> Right (plaintext, nonce)
       Nothing -> Left (CouldNotDecrypt "SecretBox failed to open")
 
 -- | encrypt the given chunk with the given secretbox key and nonce.
 -- Saltine's nonce seem represented as a big endian bytestring.
 -- However, to interop with the wormhole python client, we need to
 -- use and send nonce as a little endian bytestring.
-encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> CipherText
+encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> Either CryptoError CipherText
 encrypt key nonce plaintext =
   let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
-      newNonce = fromMaybe (panic "nonce decode failed") $
-                 Saltine.decode (toS nonceLE)
-      ciphertext = toS $ SecretBox.secretbox key newNonce plaintext
+      maybeResult = Saltine.decode (toS nonceLE) >>=
+                    \newNonce -> Just (toS (SecretBox.secretbox key newNonce plaintext))
   in
-    nonceLE <> ciphertext
+    case maybeResult of
+      Just ciphertext -> Right (nonceLE <> ciphertext)
+      Nothing -> Left (BadNonce "encrypt: could not decode nonce")
 
 hkdf :: ByteString -> SecretBox.Key -> ByteString -> ByteString
 hkdf salt key purpose =

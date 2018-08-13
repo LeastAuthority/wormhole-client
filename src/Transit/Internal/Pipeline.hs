@@ -56,7 +56,7 @@ receivePipeline fp len (TCPEndpoint s) key =
     .| CB.isolate len
     .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious fp
 
-encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
+encryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 encryptC key = loop Saltine.zero
   where
     loop nonce = do
@@ -65,10 +65,13 @@ encryptC key = loop Saltine.zero
         Nothing -> return ()
         Just chunk -> do
           let cipherText = encrypt key nonce chunk
-              cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText)))
-          C.yield (toS cipherTextSize)
-          C.yield cipherText
-          loop (Saltine.nudge nonce)
+          case cipherText of
+            Right cipherText' -> do
+              let cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText')))
+              C.yield (toS cipherTextSize)
+              C.yield cipherText'
+              loop (Saltine.nudge nonce)
+            Left e -> throwIO e
 
 decryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 decryptC key = loop Saltine.zero
@@ -82,10 +85,9 @@ decryptC key = loop Saltine.zero
           case decrypt key bs of
             Right (plainText, nonce) -> do
               let seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
-                  seqNum' = fromMaybe (panic "nonce decode failed") $
-                            Saltine.decode (toS seqNumLE)
-              if nonce /= seqNum'
-                then throwIO (BadNonce "received incorrect nonce")
+                  seqNum' = Saltine.decode (toS seqNumLE)
+              if Just nonce /= seqNum'
+                then throwIO (BadNonce "nonce decoding failed or packets received out of order.")
                 else do
                 C.yield plainText
                 loop (Saltine.nudge seqNum)
