@@ -105,21 +105,24 @@ send session appid password printHelpFn tfd = do
                         -- 0. derive transit key
                         let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
                         -- 1. create record keys
-                            sRecordKey = makeSenderRecordKey transitKey
-                            rRecordKey = makeReceiverRecordKey transitKey
-                        -- 2. handshakeExchange
-                        senderHandshakeExchange endpoint transitKey
-                        -- 3. send encrypted chunks of N bytes to the peer
-                        (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                        -- 4. read a record that should contain the transit Ack.
-                        --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                        rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                        closeConnection endpoint
-                        case rxAckMsg of
-                          Right rxSha256Hash ->
-                            when (txSha256Hash /= rxSha256Hash) $
-                            throwIO (Sha256SumError "sha256 mismatch")
-                          Left e -> throwIO (ConnectionError e)
+                            maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
+                                              <*> makeReceiverRecordKey transitKey
+                        case maybeRecordKeys of
+                          Nothing -> throwIO (TransitError "could not create record keys")
+                          Just (sRecordKey, rRecordKey) -> do
+                            -- 2. handshakeExchange
+                            senderHandshakeExchange endpoint transitKey
+                            -- 3. send encrypted chunks of N bytes to the peer
+                            (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
+                            -- 4. read a record that should contain the transit Ack.
+                            --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                            rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                            closeConnection endpoint
+                            case rxAckMsg of
+                              Right rxSha256Hash ->
+                                when (txSha256Hash /= rxSha256Hash) $
+                                throwIO (Sha256SumError "sha256 mismatch")
+                              Left e -> throwIO (ConnectionError e)
                 Right _ -> throwIO (ConnectionError "error sending transit message")
     )
 
@@ -176,16 +179,19 @@ receive session appid code = do
                         -- 2. create sender/receiver record key, sender record key
                         --    for decrypting incoming records, receiver record key
                         --    for sending the file_ack back at the end.
-                        let sRecordKey = makeSenderRecordKey transitKey
-                            rRecordKey = makeReceiverRecordKey transitKey
-                        -- 3. receive and decrypt records (length followed by length
-                        --    sized packets). Also keep track of decrypted size in
-                        --    order to know when to send the file ack at the end.
-                        (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
-                        TIO.putStrLn (show rxSha256Sum)
-                        sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
-                        -- close the connection
-                        closeConnection endpoint
+                        let maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
+                                              <*> makeReceiverRecordKey transitKey
+                        case maybeRecordKeys of
+                          Nothing -> throwIO (TransitError "could not create record keys")
+                          Just (sRecordKey, rRecordKey) -> do
+                            -- 3. receive and decrypt records (length followed by length
+                            --    sized packets). Also keep track of decrypted size in
+                            --    order to know when to send the file ack at the end.
+                            (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
+                            TIO.putStrLn (show rxSha256Sum)
+                            sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
+                            -- close the connection
+                            closeConnection endpoint
 
                     Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
               Right _ -> throwIO (UnknownPeerMessage "Could not decode message")

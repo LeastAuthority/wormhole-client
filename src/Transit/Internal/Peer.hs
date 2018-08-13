@@ -81,14 +81,12 @@ makeSenderRelayHandshake key (MagicWormhole.Side side) =
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
-makeSenderRecordKey :: SecretBox.Key -> SecretBox.Key
+makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
 makeSenderRecordKey key =
-  fromMaybe (panic "Could not encode to SecretBox key") $
   Saltine.decode (deriveKeyFromPurpose SenderRecord key)
 
-makeReceiverRecordKey :: SecretBox.Key -> SecretBox.Key
+makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
 makeReceiverRecordKey key =
-  fromMaybe (panic "Could not encode to SecretBox key") $
   Saltine.decode (deriveKeyFromPurpose ReceiverRecord key)
 
 -- |'transitExchange' exchanges transit message with the peer.
@@ -198,8 +196,11 @@ receiveAckMessage ep key = do
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-  _ <- sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
-  return ()
+      maybeEncMsg = encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg))
+    in
+    case maybeEncMsg of
+      Right encMsg -> sendRecord ep encMsg >> return ()
+      Left e -> throwIO e
 
 sendRecord :: TCPEndpoint -> ByteString -> IO Int
 sendRecord ep record = do
