@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Transit.Internal.FileTransfer
-  ( send
+  ( sendFile
   , receive
   , MessageType(..)
   )
@@ -47,8 +47,6 @@ import Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline)
 
-type Password = ByteString
-
 data MessageType
   = TMsg Text
   | TFile FilePath
@@ -74,7 +72,7 @@ sendFile conn appid filepath = do
       Left s -> throwIO (TransitError s)
       Right (Transit peerAbilities peerHints) -> do
         -- send offer for the file
-        offerResp <- senderOfferExchange conn filepath
+        offerResp <- senderFileOfferExchange conn filepath
         case offerResp of
           Left s -> throwIO (OfferError s)
           Right _ ->
@@ -104,37 +102,6 @@ sendFile conn appid filepath = do
                   Left e -> throwIO (ConnectionError e)
       Right _ -> throwIO (ConnectionError "error sending transit message")
 
-
--- | Given the magic-wormhole session, appid, password, a function to print a helpful message
--- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
--- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
--- the wormhole securely. The receiver, on successfully receiving the file, would compute
--- a sha256 sum of the encrypted file and sends it across to the sender, along with an
--- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> (Text -> IO ()) -> MessageType -> IO ()
-send session appid password printHelpFn tfd = do
-  -- first establish a wormhole session with the receiver and
-  -- then talk the filetransfer protocol over it as follows.
-  nameplate <- MagicWormhole.allocate session
-  mailbox <- MagicWormhole.claim session nameplate
-  peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
-  let (MagicWormhole.Nameplate n) = nameplate
-  printHelpFn $ toS n <> "-" <> toS password
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
-    (\conn ->
-        case tfd of
-          TMsg msg -> do
-            let offer = MagicWormhole.Message msg
-            MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (Aeson.encode offer)))
-            -- wait for "answer" message with "message_ack" key
-            MagicWormhole.PlainText rxTransitMsg <- atomically $ MagicWormhole.receiveMessage conn
-            case Aeson.eitherDecode (toS rxTransitMsg) of
-              Left s -> throwIO (TransitError (show s))
-              Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
-                                               | otherwise -> throwIO (TransitError "Message ack failed")
-              Right s -> throwIO (TransitError (show s))
-          TFile filepath -> sendFile conn appid filepath
-    )
 
 receiveFile :: MagicWormhole.EncryptedConnection -> MagicWormhole.AppID -> TransitMsg -> IO ()
 receiveFile conn appid (Transit peerAbilities peerHints) = do
@@ -198,6 +165,7 @@ receive session appid code = do
         case Aeson.eitherDecode (toS received) of
           Right (MagicWormhole.Message message) -> do
             -- TODO: send answer message with message_ack
+            sendMessageAck conn "ok"
             TIO.putStrLn message
           Right (MagicWormhole.File _ _) -> do
             -- TODO: send answer with message_ack not_ok
