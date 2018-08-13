@@ -26,7 +26,7 @@ import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 
 import Transit.Internal.Network (TCPEndpoint(..))
-import Transit.Internal.Crypto (encrypt, decrypt, CryptoError(..))
+import Transit.Internal.Crypto (encrypt, decrypt, CryptoError(..), PlainText(..), CipherText(..))
 
 -- | Given the peer network socket and the file path to be sent, this Conduit
 -- pipeline reads the file, encrypts and send it over the network. A sha256
@@ -64,9 +64,9 @@ encryptC key = loop Saltine.zero
       case b of
         Nothing -> return ()
         Just chunk -> do
-          let cipherText = encrypt key nonce chunk
+          let cipherText = encrypt key nonce (PlainText chunk)
           case cipherText of
-            Right cipherText' -> do
+            Right (CipherText cipherText') -> do
               let cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText')))
               C.yield (toS cipherTextSize)
               C.yield cipherText'
@@ -82,8 +82,8 @@ decryptC key = loop Saltine.zero
       case b of
         Nothing -> return ()
         Just bs -> do
-          case decrypt key bs of
-            Right (plainText, nonce) -> do
+          case decrypt key (CipherText bs) of
+            Right (PlainText plainText, nonce) -> do
               let seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
                   seqNum' = Saltine.decode (toS seqNumLE)
               if Just nonce /= seqNum'
