@@ -8,6 +8,7 @@ module Transit.Internal.Peer
   , transitExchange
   , senderFileOfferExchange
   , sendOffer
+  , receiveOffer
   , sendMessageAck
   , receiveMessageAck
   , senderHandshakeExchange
@@ -108,7 +109,7 @@ transitExchange conn portnum = do
   where
     receiveTransitMsg = do
       -- receive the transit from the receiving side
-      MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
+      responseMsg <- receiveWormholeMessage conn
       return responseMsg
 
 sendTransitMsg :: MagicWormhole.EncryptedConnection -> [Ability] -> [ConnectionHint] -> IO ()
@@ -124,9 +125,19 @@ sendOffer :: MagicWormhole.EncryptedConnection -> MagicWormhole.Offer -> IO ()
 sendOffer conn offer =
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode offer)))
 
+-- | receive a message over wormhole and try to decode it as an offer message.
+-- If it is not an offer message, pass the raw bytestring as a Left value.
+receiveOffer :: MagicWormhole.EncryptedConnection -> IO (Either ByteString MagicWormhole.Offer)
+receiveOffer conn = do
+  received <- receiveWormholeMessage conn
+  case eitherDecode (toS received) of
+    Right msg@(MagicWormhole.Message _) -> return $ Right msg
+    Right file@(MagicWormhole.File _ _) -> return $ Right file
+    Left _ -> return $ Left received
+
 receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO ()
 receiveMessageAck conn = do
-  MagicWormhole.PlainText rxTransitMsg <- atomically $ MagicWormhole.receiveMessage conn
+  rxTransitMsg <- receiveWormholeMessage conn
   case eitherDecode (toS rxTransitMsg) of
     Left s -> throwIO (TransitError (show s))
     Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
@@ -157,7 +168,7 @@ senderFileOfferExchange conn path = do
       sendOffer conn fileOffer
     receiveResponse :: IO ByteString
     receiveResponse = do
-      MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
+      rxFileOffer <- receiveWormholeMessage conn
       return rxFileOffer
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file

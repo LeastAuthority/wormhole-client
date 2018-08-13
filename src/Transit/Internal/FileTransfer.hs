@@ -161,20 +161,19 @@ receive session appid code = do
         -- If the sender is only sending a text message, it gets an offer first.
         -- if the sender is sending a file/directory, then transit comes first
         -- and then offer comes in.
-        received <- receiveWormholeMessage conn
-        case Aeson.eitherDecode (toS received) of
+        maybeOffer <- receiveOffer conn
+        case maybeOffer of
           Right (MagicWormhole.Message message) -> do
-            -- TODO: send answer message with message_ack
             sendMessageAck conn "ok"
             TIO.putStrLn message
           Right (MagicWormhole.File _ _) -> do
-            -- TODO: send answer with message_ack not_ok
+            sendMessageAck conn "not_ok"
             throwIO (ConnectionError "did not expect a file offer")
           Right (MagicWormhole.Directory _ _ _ _ _) -> do
             -- TODO: send answer with message_ack not_ok
             throwIO (ConnectionError "did not expect a directory offer")
           -- ok, we received the Transit Message, send back a transit message
-          Left _ ->
+          Left received ->
             case Aeson.eitherDecode (toS received) of
               Left err -> throwIO (TransitError (toS err))
               Right transitMsg@(Transit _ _) ->
