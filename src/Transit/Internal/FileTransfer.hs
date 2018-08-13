@@ -174,9 +174,10 @@ receive session appid code = do
             throwIO (ConnectionError "did not expect a directory offer")
           -- ok, we received the Transit Message, send back a transit message
           Left received ->
-            case Aeson.eitherDecode (toS received) of
-              Left err -> throwIO (TransitError (toS err))
+            case (decodeTransitMsg (toS received)) of
+              Left e -> throwIO e
               Right transitMsg@(Transit _ _) ->
                 receiveFile conn appid transitMsg
-              Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
+              Right e ->
+                throwIO (UnknownPeerMessage (show e))
     )

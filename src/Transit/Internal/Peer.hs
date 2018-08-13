@@ -14,6 +14,7 @@ module Transit.Internal.Peer
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendTransitMsg
+  , decodeTransitMsg
   , sendGoodAckMessage
   , receiveAckMessage
   , receiveWormholeMessage
@@ -117,9 +118,14 @@ sendTransitMsg conn abilities' hints' = do
   -- create transit message
   let txTransitMsg = Transit abilities' hints'
   let encodedTransitMsg = toS (encode txTransitMsg)
-
   -- send the transit message (dictionary with key as "transit" and value as abilities)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
+
+decodeTransitMsg :: ByteString -> Either CommunicationError TransitMsg
+decodeTransitMsg received =
+  case eitherDecode (toS received) of
+    Right transitMsg -> Right transitMsg
+    Left err -> Left $ TransitError (toS err)
 
 sendOffer :: MagicWormhole.EncryptedConnection -> MagicWormhole.Offer -> IO ()
 sendOffer conn offer =
