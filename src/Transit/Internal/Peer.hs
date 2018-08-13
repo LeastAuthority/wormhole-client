@@ -196,10 +196,10 @@ receiveAckMessage ep key = do
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-      maybeEncMsg = encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg))
+      maybeEncMsg = encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
     in
     case maybeEncMsg of
-      Right encMsg -> sendRecord ep encMsg >> return ()
+      Right (CipherText encMsg) -> sendRecord ep encMsg >> return ()
       Left e -> throwIO e
 
 sendRecord :: TCPEndpoint -> ByteString -> IO Int
@@ -218,7 +218,7 @@ receiveRecord ep key = do
     lenBytes <- recvBuffer ep 4
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
-    case decrypt key encRecord of
+    case decrypt key (CipherText encRecord) of
       Left e -> throwIO e
-      Right (pt, _) -> return pt
+      Right (PlainText pt, _) -> return pt
 
