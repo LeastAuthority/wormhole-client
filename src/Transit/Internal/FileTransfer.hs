@@ -18,18 +18,18 @@ import Network.Socket (socketPort)
 import qualified MagicWormhole
 
 import Transit.Internal.Network
-  ( allocateTcpPort
+  ( tcpListener
   , buildDirectHints
   , startServer
   , startClient
   , closeConnection
   , CommunicationError(..))
 import Transit.Internal.Peer
-  ( transitExchange
-  , senderOfferExchange
-  , makeSenderRecordKey
+  ( makeSenderRecordKey
   , makeReceiverRecordKey
   , senderHandshakeExchange
+  , senderTransitExchange
+  , senderFileOfferExchange
   , receiveAckMessage
   , receiveWormholeMessage
   , sendTransitMsg

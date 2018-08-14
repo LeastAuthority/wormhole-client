@@ -42,23 +42,24 @@ import Network.Socket (PortNumber)
 import Transit.Internal.Messages
   ( TransitMsg(..)
   , TransitAck(..)
-  , Ack( FileAck, MsgAck )
+  , Ack( FileAck, MessageAck )
   , Ability(..)
   , AbilityV1(..)
   , ConnectionHint)
 import Transit.Internal.Network
   ( TCPEndpoint(..)
-  , PortNumber
   , buildDirectHints
   , closeConnection
   , sendBuffer
   , recvBuffer
   , CommunicationError(..))
 import Transit.Internal.Crypto
-  ( encrypt,
-    decrypt,
-    deriveKeyFromPurpose,
-    Purpose(..))
+  ( encrypt
+  , decrypt
+  , deriveKeyFromPurpose
+  , Purpose(..)
+  , PlainText(..)
+  , CipherText(..))
 
 import qualified MagicWormhole
 
