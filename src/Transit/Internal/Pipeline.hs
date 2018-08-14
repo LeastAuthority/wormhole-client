@@ -35,7 +35,7 @@ sendPipeline :: C.MonadResource m =>
              -> TCPEndpoint
              -> SecretBox.Key
              -> C.ConduitM a c m (Text, ())
-sendPipeline fp (TCPEndpoint s) key =
+sendPipeline fp (TCPEndpoint s _) key =
   C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | Receive the encrypted bytestream from a network socket, decrypt it and
@@ -47,7 +47,7 @@ receivePipeline :: C.MonadResource m =>
                 -> TCPEndpoint
                 -> SecretBox.Key
                 -> C.ConduitM a c m (Text, ())
-receivePipeline fp len (TCPEndpoint s) key =
+receivePipeline fp len (TCPEndpoint s _) key =
     CN.sourceSocket s
     .| assembleRecordC
     .| decryptC key

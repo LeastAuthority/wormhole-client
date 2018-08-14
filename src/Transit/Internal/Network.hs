@@ -98,16 +98,17 @@ buildDirectHints portnum = do
 data TCPEndpoint
   = TCPEndpoint
     { sock :: Socket
+    , conntype :: Maybe AbilityV1
     } deriving (Show, Eq)
 
-tryToConnect :: Hint -> IO (Maybe TCPEndpoint)
-tryToConnect h@(Hint _ _ host portnum) =
+tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
+tryToConnect conntype h@(Hint _ _ host portnum) =
   timeout 1000000 (bracketOnError
                     (init host portnum)
                     (\(sock', _) -> close sock')
                     (\(sock', addr) -> do
                         connect sock' $ addrAddress addr
-                        return (TCPEndpoint sock')))
+                        return (TCPEndpoint sock' (Just conntype))))
   where
     init host' port' = withSocketsDo $ do
       TIO.putStrLn $ "trying to connect to " <> (show h)
@@ -132,7 +133,7 @@ startServer :: Socket -> IO TCPEndpoint
 startServer sock' = do
   (conn, _) <- accept sock'
   close sock'
-  return (TCPEndpoint conn)
+  return (TCPEndpoint conn Nothing)
 
 data CommunicationError
   = ConnectionError Text
@@ -153,7 +154,9 @@ startClient :: [ConnectionHint] -> IO TCPEndpoint
 startClient hs = do
   let sortedHs = sort hs
       (dHs, rHs) = segregateHints sortedHs
-  (ep1, ep2) <- concurrently (asum (map tryToConnect dHs)) (asum (map tryToConnect rHs))
+  (ep1, ep2) <- concurrently
+                (asum (map (tryToConnect DirectTcpV1) dHs))
+                (asum (map (tryToConnect RelayV1) rHs))
   let maybeEndPoint = asum [ep1, ep2]
   case maybeEndPoint of
     Just ep -> return ep
