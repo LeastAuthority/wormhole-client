@@ -16,7 +16,7 @@ module Transit.Internal.Network
 
 import Protolude
 
-import Transit.Internal.Messages
+import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..), Ability(..))
 
 import Network.Socket
   ( addrSocketType
