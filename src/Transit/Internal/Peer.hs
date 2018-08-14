@@ -140,6 +140,7 @@ receiveOffer conn = do
   case eitherDecode (toS received) of
     Right msg@(MagicWormhole.Message _) -> return $ Right msg
     Right file@(MagicWormhole.File _ _) -> return $ Right file
+    Right dir@(MagicWormhole.Directory _ _ _ _ _) -> return $ Right dir
     Left _ -> return $ Left received
 
 receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO ()
