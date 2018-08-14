@@ -25,11 +25,11 @@ import Transit.Internal.Network
   , closeConnection
   , CommunicationError(..))
 import Transit.Internal.Peer
-  ( senderTransitExchange
-  , senderFileOfferExchange
-  , makeSenderRecordKey
+  ( makeSenderRecordKey
   , makeReceiverRecordKey
   , senderHandshakeExchange
+  , senderTransitExchange
+  , senderFileOfferExchange
   , receiveAckMessage
   , receiveWormholeMessage
   , sendTransitMsg

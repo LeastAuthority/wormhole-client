@@ -54,12 +54,12 @@ import Transit.Internal.Network
   , recvBuffer
   , CommunicationError(..))
 import Transit.Internal.Crypto
-  ( encrypt,
-    decrypt,
-    deriveKeyFromPurpose,
-    Purpose(..),
-    PlainText(..),
-    CipherText(..))
+  ( encrypt
+  , decrypt
+  , deriveKeyFromPurpose
+  , Purpose(..)
+  , PlainText(..)
+  , CipherText(..))
 
 import qualified MagicWormhole
 
