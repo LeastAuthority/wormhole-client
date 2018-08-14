@@ -162,6 +162,8 @@ receive session appid code = do
           Right (MagicWormhole.File _ _) -> do
             Transit.sendMessageAck conn "not_ok"
             throwIO (Transit.ConnectionError "did not expect a file offer")
+          Right (MagicWormhole.Directory _ _ _ _ _) ->
+            throwIO (Transit.UnknownPeerMessage "directory offer is not supported")
           -- ok, we received the Transit Message, send back a transit message
           Left received ->
             case (Transit.decodeTransitMsg (toS received)) of

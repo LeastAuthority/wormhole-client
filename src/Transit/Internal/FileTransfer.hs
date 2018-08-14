@@ -25,8 +25,8 @@ import Transit.Internal.Network
   , closeConnection
   , CommunicationError(..))
 import Transit.Internal.Peer
-  ( transitExchange
-  , senderOfferExchange
+  ( senderTransitExchange
+  , senderFileOfferExchange
   , makeSenderRecordKey
   , makeReceiverRecordKey
   , senderHandshakeExchange
