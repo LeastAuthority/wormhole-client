@@ -33,8 +33,25 @@ import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.FilePath (takeFileName)
 
 import Transit.Internal.Messages
+  ( TransitMsg(..)
+  , TransitAck(..)
+  , Ack( FileAck, MsgAck )
+  , Ability(..)
+  , AbilityV1(..)
+  , ConnectionHint)
 import Transit.Internal.Network
+  ( TCPEndpoint(..)
+  , PortNumber
+  , buildDirectHints
+  , closeConnection
+  , sendBuffer
+  , recvBuffer
+  , CommunicationError(..))
 import Transit.Internal.Crypto
+  ( encrypt,
+    decrypt,
+    deriveKeyFromPurpose,
+    Purpose(..))
 
 import qualified MagicWormhole
 

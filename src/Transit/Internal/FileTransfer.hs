@@ -18,9 +18,32 @@ import qualified Conduit as C
 import qualified MagicWormhole
 
 import Transit.Internal.Network
+  ( allocateTcpPort
+  , buildDirectHints
+  , startServer
+  , startClient
+  , closeConnection
+  , CommunicationError(..))
 import Transit.Internal.Peer
+  ( transitExchange
+  , senderOfferExchange
+  , makeSenderRecordKey
+  , makeReceiverRecordKey
+  , senderHandshakeExchange
+  , receiveAckMessage
+  , receiveWormholeMessage
+  , sendTransitMsg
+  , sendWormholeMessage
+  , receiverHandshakeExchange
+  , sendGoodAckMessage)
 import Transit.Internal.Messages
+  ( TransitMsg( Transit, Answer )
+  , Ability(..)
+  , AbilityV1(..)
+  , Ack( FileAck ))
 import Transit.Internal.Pipeline
+  ( sendPipeline
+  , receivePipeline)
 
 type Password = ByteString
 
