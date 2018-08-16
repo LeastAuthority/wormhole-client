@@ -52,8 +52,9 @@ import Transit.Internal.Messages
   , ConnectionHint)
 import Transit.Internal.Network
   ( TCPEndpoint(..)
+  , RelayEndpoint(..)
   , buildDirectHints
-  , closeConnection
+  , buildRelayHints
   , sendBuffer
   , recvBuffer
   , CommunicationError(..))
@@ -102,11 +103,12 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-senderTransitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-senderTransitExchange conn portnum = do
-  let abilities' = [Ability DirectTcpV1]
-  hints' <- buildDirectHints portnum
-  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> PortNumber -> IO (Either Text TransitMsg)
+senderTransitExchange conn relayurl portnum = do
+  let abilities' = [Ability DirectTcpV1, Ability RelayV1]
+      relayHints = buildRelayHints relayurl
+  directHints <- buildDirectHints portnum
+  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' (directHints <> relayHints)) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
     Left s -> return (Left (toS s))
@@ -195,16 +197,32 @@ sendWormholeMessage conn msg =
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS msg))
 
 data InvalidHandshake = InvalidHandshake
+                      | InvalidRelayHandshake
   deriving (Show, Eq)
 
 instance E.Exception InvalidHandshake where
 
-senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
-senderHandshakeExchange ep key = do
+relayHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+relayHandshakeExchange ep key side = do
+  r <- sendRelayHandshake >> receiveAck
+  if r == "ok\n"
+    then return ()
+    else throwIO InvalidRelayHandshake
+  where
+    sendRelayHandshake = sendBuffer ep sHandshakeMsg
+    sHandshakeMsg = makeRelayHandshake key side
+    receiveAck = recvByteString (BS.length rHandshakeMsg)
+    rHandshakeMsg = "ok\n"
+    recvByteString n = recvBuffer ep n
+
+senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+senderHandshakeExchange ep key side = do
+  when (conntype ep == Just RelayV1) $ do
+    relayHandshakeExchange ep key side
   (_, r) <- concurrently sendHandshake rxHandshake
   if r == rHandshakeMsg
-      then sendGo >> return ()
-      else sendNeverMind >> closeConnection ep
+    then sendGo >> return ()
+    else sendNeverMind >> throwIO InvalidHandshake
   where
     sendHandshake = sendBuffer ep sHandshakeMsg
     rxHandshake = recvByteString (BS.length rHandshakeMsg)
@@ -214,8 +232,10 @@ senderHandshakeExchange ep key = do
     rHandshakeMsg = makeReceiverHandshake key
     recvByteString n = recvBuffer ep n
 
-receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
-receiverHandshakeExchange ep key = do
+receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+receiverHandshakeExchange ep key side = do
+  when (conntype ep == Just RelayV1) $ do
+    relayHandshakeExchange ep key side
   (_, r') <- concurrently sendHandshake rxHandshake
   r'' <- recvByteString (BS.length "go\n")
   if (r' <> r'') == sHandshakeMsg <> "go\n"

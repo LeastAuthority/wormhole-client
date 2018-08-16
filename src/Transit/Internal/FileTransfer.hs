@@ -23,7 +23,9 @@ import Transit.Internal.Network
   , startServer
   , startClient
   , closeConnection
+  , RelayEndpoint
   , CommunicationError(..))
+
 import Transit.Internal.Peer
   ( makeSenderRecordKey
   , makeReceiverRecordKey
@@ -35,12 +37,15 @@ import Transit.Internal.Peer
   , sendTransitMsg
   , sendWormholeMessage
   , receiverHandshakeExchange
-  , sendGoodAckMessage)
+  , sendGoodAckMessage
+  , generateTransitSide)
+
 import Transit.Internal.Messages
   ( TransitMsg( Transit, Answer )
   , Ability(..)
   , AbilityV1(..)
-  , Ack( FileAck, MessageAck ))
+  , Ack( FileAck ))
+
 import Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline)
@@ -59,13 +64,14 @@ transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.EncryptedConnection -> MagicWormhole.AppID -> FilePath -> IO ()
-sendFile conn appid filepath = do
+sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO ()
+sendFile conn transitserver appid filepath = do
   -- exchange abilities
   sock' <- tcpListener
   portnum <- socketPort sock'
+  side <- generateTransitSide
   withAsync (startServer sock') $ \asyncServer -> do
-    transitResp <- senderTransitExchange conn portnum
+    transitResp <- senderTransitExchange conn transitserver portnum
     case transitResp of
       Left s -> throwIO (TransitError s)
       Right (Transit peerAbilities peerHints) -> do
@@ -86,7 +92,8 @@ sendFile conn appid filepath = do
               Nothing -> throwIO (TransitError "could not create record keys")
               Just (sRecordKey, rRecordKey) -> do
                 -- 2. handshakeExchange
-                senderHandshakeExchange endpoint transitKey
+                senderHandshakeExchange endpoint transitKey side
+
                 -- 3. send encrypted chunks of N bytes to the peer
                 (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
                 -- 4. read a record that should contain the transit Ack.
@@ -101,12 +108,13 @@ sendFile conn appid filepath = do
       Right _ -> throwIO (ConnectionError "error sending transit message")
 
 
-receiveFile :: MagicWormhole.EncryptedConnection -> MagicWormhole.AppID -> TransitMsg -> IO ()
-receiveFile conn appid (Transit peerAbilities peerHints) = do
-  let abilities' = [Ability DirectTcpV1]
+receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO ()
+receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
+  let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
   portnum <- socketPort s
   hints' <- buildDirectHints portnum
+  side <- generateTransitSide
   withAsync (startServer s) $ \asyncServer -> do
     sendTransitMsg conn abilities' hints'
     -- now expect an offer message
@@ -125,7 +133,7 @@ receiveFile conn appid (Transit peerAbilities peerHints) = do
           -- 0. derive transit key
           let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
           -- 1. handshakeExchange
-          receiverHandshakeExchange endpoint transitKey
+          receiverHandshakeExchange endpoint transitKey side
           -- 2. create sender/receiver record key, sender record key
           --    for decrypting incoming records, receiver record key
           --    for sending the file_ack back at the end.
@@ -143,4 +151,5 @@ receiveFile conn appid (Transit peerAbilities peerHints) = do
               -- close the connection
               closeConnection endpoint
       Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
-receiveFile _ _ _ = throwIO (UnknownPeerMessage "Could not recognize the message")
+receiveFile _ _ _ _ = throwIO (UnknownPeerMessage "Could not recognize the message")
+
