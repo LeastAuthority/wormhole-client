@@ -4,7 +4,7 @@ module Transit.Internal.Peer
   , makeReceiverHandshake
   , makeSenderRecordKey
   , makeReceiverRecordKey
-  , makeSenderRelayHandshake
+  , makeRelayHandshake
   , senderTransitExchange
   , senderFileOfferExchange
   , sendOffer
@@ -19,6 +19,7 @@ module Transit.Internal.Peer
   , receiveAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
+  , generateTransitSide
   )
 where
 
@@ -27,17 +28,20 @@ import Protolude
 import qualified Control.Exception as E
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
-import qualified Data.ByteString as BS
 import Data.ByteString.Builder(toLazyByteString, word32BE)
-import qualified Data.ByteString.Lazy as BL
 import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.FilePath (takeFileName)
 import Network.Socket (PortNumber)
+import Crypto.Random (MonadRandom(..))
+import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -77,13 +81,13 @@ makeReceiverHandshake key =
     subkey = deriveKeyFromPurpose ReceiverHandshake key
     hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
 
--- | create sender's relay handshake bytestring
+-- | create relay handshake bytestring
 -- "please relay HEXHEX for side XXXXX\n"
-makeSenderRelayHandshake :: SecretBox.Key -> MagicWormhole.Side -> ByteString
-makeSenderRelayHandshake key (MagicWormhole.Side side) =
+makeRelayHandshake :: SecretBox.Key -> MagicWormhole.Side -> ByteString
+makeRelayHandshake key (MagicWormhole.Side side) =
   (toS @Text @ByteString "please relay ") <> token <> (toS @Text @ByteString " for side ") <> sideBytes <> "\n"
   where
-    subkey = deriveKeyFromPurpose SenderRelayHandshake key
+    subkey = deriveKeyFromPurpose RelayHandshake key
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
@@ -260,4 +264,9 @@ receiveRecord ep key = do
     case decrypt key (CipherText encRecord) of
       Left e -> throwIO e
       Right (PlainText pt, _) -> return pt
+
+generateTransitSide :: MonadRandom m => m MagicWormhole.Side
+generateTransitSide = do
+  randomBytes <- getRandomBytes 8
+  pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
 
