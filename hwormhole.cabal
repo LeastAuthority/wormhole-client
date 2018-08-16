@@ -37,6 +37,7 @@ library
                      , conduit
                      , conduit-extra
                      , magic-wormhole
+                     , memory
                      , network
                      , protolude
                      , hex
@@ -77,6 +78,7 @@ test-suite hwormhole-tests
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
   ghc-options: -Wall -Werror=incomplete-patterns
   build-depends:      base >=4.6 && <5
+                    , bytestring
                     , aeson
                     , conduit
                     , binary
