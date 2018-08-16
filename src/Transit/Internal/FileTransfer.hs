@@ -24,6 +24,7 @@ import Transit.Internal.Network
   , startClient
   , closeConnection
   , CommunicationError(..))
+
 import Transit.Internal.Peer
   ( makeSenderRecordKey
   , makeReceiverRecordKey
@@ -35,12 +36,15 @@ import Transit.Internal.Peer
   , sendTransitMsg
   , sendWormholeMessage
   , receiverHandshakeExchange
-  , sendGoodAckMessage)
+  , sendGoodAckMessage
+  , generateTransitSide)
+
 import Transit.Internal.Messages
   ( TransitMsg( Transit, Answer )
   , Ability(..)
   , AbilityV1(..)
-  , Ack( FileAck, MessageAck ))
+  , Ack( FileAck ))
+
 import Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline)
@@ -64,6 +68,7 @@ sendFile conn appid filepath = do
   -- exchange abilities
   sock' <- tcpListener
   portnum <- socketPort sock'
+  side <- generateTransitSide
   withAsync (startServer sock') $ \asyncServer -> do
     transitResp <- senderTransitExchange conn portnum
     case transitResp of
@@ -86,7 +91,8 @@ sendFile conn appid filepath = do
               Nothing -> throwIO (TransitError "could not create record keys")
               Just (sRecordKey, rRecordKey) -> do
                 -- 2. handshakeExchange
-                senderHandshakeExchange endpoint transitKey
+                senderHandshakeExchange endpoint transitKey side
+
                 -- 3. send encrypted chunks of N bytes to the peer
                 (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
                 -- 4. read a record that should contain the transit Ack.
@@ -103,10 +109,11 @@ sendFile conn appid filepath = do
 
 receiveFile :: MagicWormhole.EncryptedConnection -> MagicWormhole.AppID -> TransitMsg -> IO ()
 receiveFile conn appid (Transit peerAbilities peerHints) = do
-  let abilities' = [Ability DirectTcpV1]
+  let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
   portnum <- socketPort s
   hints' <- buildDirectHints portnum
+  side <- generateTransitSide
   withAsync (startServer s) $ \asyncServer -> do
     sendTransitMsg conn abilities' hints'
     -- now expect an offer message
@@ -125,7 +132,7 @@ receiveFile conn appid (Transit peerAbilities peerHints) = do
           -- 0. derive transit key
           let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
           -- 1. handshakeExchange
-          receiverHandshakeExchange endpoint transitKey
+          receiverHandshakeExchange endpoint transitKey side
           -- 2. create sender/receiver record key, sender record key
           --    for decrypting incoming records, receiver record key
           --    for sending the file_ack back at the end.
