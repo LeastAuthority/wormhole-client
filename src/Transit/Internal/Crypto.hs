@@ -76,8 +76,8 @@ data Purpose
   -- ^ Purpose type to be used for encrypting records.
   | ReceiverRecord
   -- ^ Purpose type to be used for decrypting records.
-  | SenderRelayHandshake
-  -- ^ Purpose type to be used by transit relay sender.
+  | RelayHandshake
+  -- ^ Purpose type to be used for transit relay handshake.
   deriving (Eq, Show)
 
 -- | derive a new purpose-specific key from a master key.
@@ -91,4 +91,4 @@ deriveKeyFromPurpose purpose key =
     purposeStr ReceiverHandshake = "transit_receiver"
     purposeStr SenderRecord = "transit_record_sender_key"
     purposeStr ReceiverRecord = "transit_record_receiver_key"
-    purposeStr SenderRelayHandshake = "transit_relay_token"
+    purposeStr RelayHandshake = "transit_relay_token"
