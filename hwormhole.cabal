@@ -13,7 +13,7 @@ copyright:           (c) 2018 Least Authority TFA Gmbh
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md
-cabal-version:       >=2.2
+cabal-version:       1.24
 data-files:          wordlist.txt
 
 source-repository head
