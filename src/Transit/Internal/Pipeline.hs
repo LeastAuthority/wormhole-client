@@ -23,7 +23,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 
-import Transit.Internal.Network (TCPEndpoint(..), CommunicationError(..))
+import Transit.Internal.Network (TCPEndpoint(..))
 import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..), CryptoError(..))
 
 -- | Given the peer network socket and the file path to be sent, this Conduit
