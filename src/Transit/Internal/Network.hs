@@ -5,6 +5,8 @@ module Transit.Internal.Network
   (
     -- * build direct hints from port number and the interfaces on the host.
     buildDirectHints
+    -- * build relay hints
+  , buildRelayHints
     -- * low level bytestring buffer send/receive over a socket
   , sendBuffer
   , recvBuffer
@@ -58,6 +60,12 @@ import System.Timeout (timeout)
 
 import qualified Data.Text.IO as TIO
 
+transitRelayHost :: Text
+transitRelayHost = "transit.magic-wormhole.io"
+
+transitRelayPort :: Word16
+transitRelayPort = 4001
+
 tcpListener :: IO Socket
 tcpListener = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
@@ -94,6 +102,12 @@ buildDirectHints portnum = do
                               , port = fromIntegral portnum
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
+
+buildRelayHints :: [ConnectionHint]
+buildRelayHints = [Relay RelayV1 [Hint { hostname = transitRelayHost
+                                       , port = transitRelayPort
+                                       , priority = 0.0
+                                       , ctype = RelayV1 }]]
 
 data TCPEndpoint
   = TCPEndpoint
@@ -157,7 +171,7 @@ startClient hs = do
   (ep1, ep2) <- concurrently
                 (asum (map (tryToConnect DirectTcpV1) dHs))
                 (asum (map (tryToConnect RelayV1) rHs))
-  let maybeEndPoint = asum [ep1, ep2]
+  let maybeEndPoint = ep1 <|> ep2
   case maybeEndPoint of
     Just ep -> return ep
     Nothing -> throwIO (ConnectionError "Peer socket is not active")
