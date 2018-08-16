@@ -21,7 +21,7 @@ module Transit.Internal.Network
 
 import Protolude
 
-import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..), Ability(..))
+import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..))
 
 import Network.Socket
   ( addrSocketType
@@ -102,13 +102,13 @@ data TCPEndpoint
     } deriving (Show, Eq)
 
 tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
-tryToConnect conntype h@(Hint _ _ host portnum) =
+tryToConnect ability h@(Hint _ _ host portnum) =
   timeout 1000000 (bracketOnError
                     (init host portnum)
                     (\(sock', _) -> close sock')
                     (\(sock', addr) -> do
                         connect sock' $ addrAddress addr
-                        return (TCPEndpoint sock' (Just conntype))))
+                        return (TCPEndpoint sock' (Just ability))))
   where
     init host' port' = withSocketsDo $ do
       TIO.putStrLn $ "trying to connect to " <> (show h)
