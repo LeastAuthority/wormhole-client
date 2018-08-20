@@ -125,8 +125,7 @@ assembleRecordC = do
                     let (f, l) = BS.splitAt size bs
                     C.leftover l
                     return $ residue <> f
-                | size == BS.length bs -> do
-                    return (residue <> bs)
+                | size == BS.length bs -> return (residue <> bs)
                 | otherwise -> do
                     let want = size - BS.length bs
                     go want $ BB.fromByteString (residue <> bs)
