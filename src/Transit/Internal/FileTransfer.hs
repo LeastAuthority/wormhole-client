@@ -131,6 +131,7 @@ receive session appid code = do
         case Aeson.eitherDecode (toS received) of
           Right (MagicWormhole.Message message) -> TIO.putStrLn message
           Right (MagicWormhole.File _ _) -> throwIO (ConnectionError "did not expect a file offer")
+          Right (MagicWormhole.Directory _ _ _ _ _) -> throwIO (ConnectionError "did not expect a file offer")
           -- ok, we received the Transit Message, send back a transit message
           Left _ ->
             case Aeson.eitherDecode (toS received) of
@@ -172,6 +173,7 @@ receive session appid code = do
                         -- close the connection
                         closeConnection endpoint
 
+                    Right (MagicWormhole.Directory _ _ _ _ _) -> throwIO (UnknownPeerMessage "Directory offers are not supported yet")
                     Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
               Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
     )
