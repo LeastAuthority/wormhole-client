@@ -13,7 +13,7 @@ copyright:           (c) 2018 Least Authority TFA Gmbh
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md
-cabal-version:       >=2.2
+cabal-version:       1.24
 data-files:          wordlist.txt
 
 source-repository head
@@ -27,6 +27,8 @@ library
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages
+                     , Transit.Internal.Pipeline
+                     , Transit.Internal.Crypto
   build-depends:       base >=4.6 && <5
                      , bytestring
                      , async
@@ -79,6 +81,11 @@ test-suite hwormhole-tests
   ghc-options: -Wall -Werror=incomplete-patterns
   build-depends:      base >=4.6 && <5
                     , aeson >=1.4 && <2
+                    , conduit
+                    , binary
+                    , binary-conduit
+                    , conduit-extra
+                    , text
                     , protolude
                     , hspec
                     , saltine
@@ -86,5 +93,6 @@ test-suite hwormhole-tests
                     , hedgehog
   other-modules:      ProtocolTests
                     , MessagesTests
+                    , PipelineTests
                     , Generator
   default-language:   Haskell2010

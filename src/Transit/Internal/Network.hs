@@ -4,18 +4,19 @@
 module Transit.Internal.Network
   ( allocateTcpPort
   , buildDirectHints
-  , runTransitProtocol
   , sendBuffer
   , recvBuffer
   , closeConnection
   , TCPEndpoint(..)
   , PortNumber
   , startServer
+  , startClient
+  , CommunicationError(..)
   ) where
 
 import Protolude
 
-import Transit.Internal.Messages
+import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..), Ability(..))
 
 import Network.Socket
   ( addrSocketType
@@ -125,11 +126,11 @@ tryToConnect (Ability RelayV1) _ = do
   TIO.putStrLn "Relays are not supported yet"
   return Nothing
 
-sendBuffer :: TCPEndpoint -> ByteString -> IO (Either IOException Int)
-sendBuffer ep = try . send (sock ep)
+sendBuffer :: TCPEndpoint -> ByteString -> IO Int
+sendBuffer ep = send (sock ep)
 
-recvBuffer :: TCPEndpoint -> Int -> IO (Either IOException ByteString)
-recvBuffer ep = try . recv (sock ep)
+recvBuffer :: TCPEndpoint -> Int -> IO ByteString
+recvBuffer ep = recv (sock ep)
 
 closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = close (sock ep)
@@ -142,28 +143,24 @@ startServer portnum = do
   _ <- setSocketOption sock' ReuseAddr 1
   _ <- bind sock' (addrAddress addr)
   listen sock' 5
-  (sock'', _) <- accept sock'
-  return (TCPEndpoint sock'')
+  (conn, _) <- accept sock'
+  close sock'
+  return (TCPEndpoint conn)
 
-data ConnectionError
+data CommunicationError
   = ConnectionError Text
+  | OfferError Text
+  | TransitError Text
+  | Sha256SumError Text
+  | CouldNotDecrypt Text
+  | UnknownPeerMessage Text
   deriving (Eq, Show)
 
-instance Exception ConnectionError
+instance Exception CommunicationError
 
-runTransitProtocol :: [Ability] -> [ConnectionHint] -> Async TCPEndpoint -> (TCPEndpoint -> IO ()) -> IO ()
-runTransitProtocol as hs serverAsync app = do
-  -- establish the tcp connection with the peer/relay
-  -- for each (hostname, port) pair in direct hints, try to establish connection
-  maybeServerAccepted <- poll serverAsync
-  case maybeServerAccepted of
-    Nothing -> do
-      maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
-      case maybeClientEndPoint of
-        Just ep -> do
-          -- kill server async
-          cancel serverAsync
-          app ep
-        Nothing -> throwIO (ConnectionError "Peer socket is not active")
-    Just (Right ep) -> app ep
-    Just e -> panic (show e)
+startClient :: [Ability] -> [ConnectionHint] -> IO TCPEndpoint
+startClient as hs = do
+  maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
+  case maybeClientEndPoint of
+    Just ep -> return ep
+    Nothing -> throwIO (ConnectionError "Peer socket is not active")

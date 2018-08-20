@@ -9,27 +9,18 @@ module Transit.Internal.Peer
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendTransitMsg
-  , receiveRecords
   , sendGoodAckMessage
   , receiveAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
-  , sha256sum
-  , encryptC
-  , sha256PassThroughC
   )
 where
 
 import Protolude
 
 import qualified Control.Exception as E
-import Crypto.Hash (SHA256(..))
-import qualified Crypto.Hash as Hash
-import qualified Crypto.KDF.HKDF as HKDF
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
-import Crypto.Saltine.Internal.ByteSizes (boxNonce)
-import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
 import qualified Data.ByteString as BS
@@ -39,36 +30,30 @@ import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
-import qualified Conduit as C
+import System.FilePath (takeFileName)
 
 import Transit.Internal.Messages
+  ( TransitMsg(..)
+  , TransitAck(..)
+  , Ack( FileAck, MsgAck )
+  , Ability(..)
+  , AbilityV1(..)
+  , ConnectionHint)
 import Transit.Internal.Network
+  ( TCPEndpoint(..)
+  , PortNumber
+  , buildDirectHints
+  , closeConnection
+  , sendBuffer
+  , recvBuffer
+  , CommunicationError(..))
+import Transit.Internal.Crypto
+  ( encrypt,
+    decrypt,
+    deriveKeyFromPurpose,
+    Purpose(..))
 
 import qualified MagicWormhole
-
-hkdf :: ByteString -> SecretBox.Key -> ByteString -> ByteString
-hkdf salt key purpose =
-  HKDF.expand (HKDF.extract salt (Saltine.encode key) :: HKDF.PRK SHA256) purpose keySize
-  where
-    keySize = ByteSizes.secretBoxKey
-
-data Purpose
-  = SenderHandshake
-  | ReceiverHandshake
-  | SenderRecord
-  | ReceiverRecord
-  deriving (Eq, Show)
-
-deriveKeyFromPurpose :: Purpose -> SecretBox.Key -> ByteString
-deriveKeyFromPurpose purpose key =
-  hkdf salt key (purposeStr purpose)
-  where
-    salt = "" :: ByteString
-    purposeStr :: Purpose -> ByteString
-    purposeStr SenderHandshake = "transit_sender"
-    purposeStr ReceiverHandshake = "transit_receiver"
-    purposeStr SenderRecord = "transit_record_sender_key"
-    purposeStr ReceiverRecord = "transit_record_receiver_key"
 
 makeSenderHandshake :: SecretBox.Key -> ByteString
 makeSenderHandshake key =
@@ -138,7 +123,7 @@ senderOfferExchange conn path = do
     sendOffer :: IO ()
     sendOffer = do
       size <- getFileSize path
-      let fileOffer = MagicWormhole.File (toS path) size
+      let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
       MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
     receiveResponse :: IO ByteString
     receiveResponse = do
@@ -164,10 +149,7 @@ instance E.Exception InvalidHandshake where
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 senderHandshakeExchange ep key = do
   (_, r) <- concurrently sendHandshake rxHandshake
-  case r of
-    Left e -> throwIO e
-    Right res ->
-      if res == rHandshakeMsg
+  if r == rHandshakeMsg
       then sendGo >> return ()
       else sendNeverMind >> closeConnection ep
   where
@@ -182,15 +164,10 @@ senderHandshakeExchange ep key = do
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
 receiverHandshakeExchange ep key = do
   (_, r') <- concurrently sendHandshake rxHandshake
-  case r' of
-    Left e -> throwIO e
-    Right res | res == sHandshakeMsg -> do
-                  r'' <- recvByteString (BS.length "go\n")
-                  case r'' of
-                    Left e -> throwIO e
-                    Right m | m == "go\n" -> return ()
-                            | otherwise -> throwIO InvalidHandshake
-    Right _ -> throwIO InvalidHandshake
+  r'' <- recvByteString (BS.length "go\n")
+  if (r' <> r'') == sHandshakeMsg <> "go\n"
+    then return ()
+    else throwIO InvalidHandshake
     where
         sendHandshake = sendBuffer ep rHandshakeMsg
         rxHandshake = recvByteString (BS.length sHandshakeMsg)
@@ -209,105 +186,26 @@ receiveAckMessage ep key = do
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-  sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
+  _ <- sendRecord ep (encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg)))
+  return ()
 
-type PlainText = ByteString
-type CipherText = ByteString
-
-sendRecord :: TCPEndpoint -> ByteString -> IO ()
+sendRecord :: TCPEndpoint -> ByteString -> IO Int
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
   -- format sz as a fixed 4 byte bytestring
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
-  _ <- sendBuffer ep (toS payloadSize)
-  _ <- sendBuffer ep record
-  return ()
-
-encryptC :: Monad m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
-encryptC key = go Saltine.zero
-  where
-    go nonce = do
-      b <- C.await
-      case b of
-        Nothing -> return ()
-        Just chunk -> do
-          let cipherText = encrypt key nonce chunk
-              cipherTextSize = toLazyByteString (word32BE (fromIntegral (BS.length cipherText)))
-          C.yield (toS cipherTextSize)
-          C.yield cipherText
-          go (Saltine.nudge nonce)
-
-sha256PassThroughC :: (Monad m) => C.ConduitT ByteString ByteString m Text
-sha256PassThroughC = go $! Hash.hashInitWith SHA256
-  where
-    go :: (Monad m) => Hash.Context SHA256 -> C.ConduitT ByteString ByteString m Text
-    go ctx = do
-      b <- C.await
-      case b of
-        Nothing -> return $! (show (Hash.hashFinalize ctx))
-        Just bs -> do
-          C.yield bs
-          go $! Hash.hashUpdate ctx bs
-
-
-sha256sum :: [ByteString] -> Hash.Digest Hash.SHA256
-sha256sum = hashBlocks (Hash.hashInitWith Hash.SHA256)
-  where
-    hashBlocks :: Hash.Context Hash.SHA256 -> [ByteString] -> Hash.Digest Hash.SHA256
-    hashBlocks ctx [] = Hash.hashFinalize ctx
-    hashBlocks ctx (r:rs) = hashBlocks (Hash.hashUpdate ctx r) rs
-
--- | encrypt the given chunk with the given secretbox key and nonce.
--- Saltine's nonce seem represented as a big endian bytestring.
--- However, to interop with the wormhole python client, we need to
--- use and send nonce as a little endian bytestring.
-encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> CipherText
-encrypt key nonce plaintext =
-  let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
-      newNonce = fromMaybe (panic "nonce decode failed") $
-                 Saltine.decode (toS nonceLE)
-      ciphertext = toS $ SecretBox.secretbox key newNonce plaintext
-  in
-    nonceLE <> ciphertext
-
-decrypt :: SecretBox.Key -> CipherText -> Either Text PlainText
-decrypt key ciphertext =
-  -- extract nonce from ciphertext.
-  let (nonceBytes, ct) = BS.splitAt boxNonce ciphertext
-      nonce = fromMaybe (panic "unable to decode nonce") $
-              Saltine.decode nonceBytes
-      maybePlainText = SecretBox.secretboxOpen key nonce ct
-  in
-    case maybePlainText of
-      Just pt -> Right pt
-      Nothing -> Left "decription error"
+  _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
+  sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
 
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
 receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
   -- decrypt the record
-  resLen <- recvBuffer ep 4
-  case resLen of
-    Left e -> throwIO e
-    Right lenBytes -> do
-      let len = runGet getWord32be (BL.fromStrict lenBytes)
-      recBytes <- recvBuffer ep (fromIntegral len)
-      case recBytes of
-        Left e -> throwIO e
-        Right encRecord -> do
-          case decrypt key encRecord of
-            Left s -> panic s
-            Right pt -> return pt
-
-receiveRecords :: TCPEndpoint -> SecretBox.Key -> Int -> IO [ByteString]
-receiveRecords ep key size = do
-  go size
-    where
-      go :: Int -> IO [ByteString]
-      go remainingSize | remainingSize <= 0 = return []
-                       | otherwise = do
-                           block <- receiveRecord ep key
-                           blocks <- go (remainingSize - BS.length block)
-                           return (block:blocks)
+    lenBytes <- recvBuffer ep 4
+    let len = runGet getWord32be (BL.fromStrict lenBytes)
+    encRecord <- recvBuffer ep (fromIntegral len)
+    case decrypt key encRecord of
+      Left s -> throwIO (CouldNotDecrypt s)
+      Right pt -> return pt
 
