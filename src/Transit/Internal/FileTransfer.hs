@@ -23,6 +23,7 @@ import Transit.Internal.Network
   , startServer
   , startClient
   , closeConnection
+  , RelayEndpoint
   , CommunicationError(..))
 
 import Transit.Internal.Peer
@@ -63,14 +64,14 @@ transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.EncryptedConnection -> MagicWormhole.AppID -> FilePath -> IO ()
-sendFile conn appid filepath = do
+sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO ()
+sendFile conn transitserver appid filepath = do
   -- exchange abilities
   sock' <- tcpListener
   portnum <- socketPort sock'
   side <- generateTransitSide
   withAsync (startServer sock') $ \asyncServer -> do
-    transitResp <- senderTransitExchange conn portnum
+    transitResp <- senderTransitExchange conn transitserver portnum
     case transitResp of
       Left s -> throwIO (TransitError s)
       Right (Transit peerAbilities peerHints) -> do
@@ -107,8 +108,8 @@ sendFile conn appid filepath = do
       Right _ -> throwIO (ConnectionError "error sending transit message")
 
 
-receiveFile :: MagicWormhole.EncryptedConnection -> MagicWormhole.AppID -> TransitMsg -> IO ()
-receiveFile conn appid (Transit peerAbilities peerHints) = do
+receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO ()
+receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
   portnum <- socketPort s
@@ -150,4 +151,5 @@ receiveFile conn appid (Transit peerAbilities peerHints) = do
               -- close the connection
               closeConnection endpoint
       Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
-receiveFile _ _ _ = throwIO (UnknownPeerMessage "Could not recognize the message")
+receiveFile _ _ _ _ = throwIO (UnknownPeerMessage "Could not recognize the message")
+

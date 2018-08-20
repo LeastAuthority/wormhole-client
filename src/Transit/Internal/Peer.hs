@@ -52,6 +52,7 @@ import Transit.Internal.Messages
   , ConnectionHint)
 import Transit.Internal.Network
   ( TCPEndpoint(..)
+  , RelayEndpoint(..)
   , buildDirectHints
   , buildRelayHints
   , sendBuffer
@@ -102,10 +103,10 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-senderTransitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-senderTransitExchange conn portnum = do
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> PortNumber -> IO (Either Text TransitMsg)
+senderTransitExchange conn relayurl portnum = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
-      relayHints = buildRelayHints
+      relayHints = buildRelayHints relayurl
   directHints <- buildDirectHints portnum
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' (directHints <> relayHints)) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
