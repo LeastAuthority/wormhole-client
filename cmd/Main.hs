@@ -118,8 +118,8 @@ type Password = ByteString
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO ()
-send session appid password tfd = do
+send :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO ()
+send session transitserver appid password tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
   nameplate <- MagicWormhole.allocate session
@@ -135,12 +135,12 @@ send session appid password tfd = do
             Transit.sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
             Transit.receiveMessageAck conn
-          Transit.TFile filepath -> Transit.sendFile conn appid filepath
+          Transit.TFile filepath -> Transit.sendFile conn transitserver appid filepath
     )
 
 -- | receive a text message or file from the wormhole peer.
-receive :: MagicWormhole.Session -> MagicWormhole.AppID -> Text -> IO ()
-receive session appid code = do
+receive :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Text -> IO ()
+receive session transitserver appid code = do
   -- establish the connection
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
@@ -169,7 +169,7 @@ receive session appid code = do
             case (Transit.decodeTransitMsg (toS received)) of
               Left e -> throwIO e
               Right transitMsg ->
-                Transit.receiveFile conn appid transitMsg
+                Transit.receiveFile conn transitserver appid transitMsg
     )
 
 main :: IO ()
@@ -178,13 +178,14 @@ main = do
   wordList <- genWordList =<< getDataFileName "wordlist.txt"
   side <- MagicWormhole.generateSide
   let endpoint = relayEndpoint options
+      transiturl = transitUrl options
   case cmd options of
     Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
       password <- allocatePassword wordList
-      send session appID (toS password) tfd
+      send session transiturl appID (toS password) tfd
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
       code <- getWormholeCode session wordList maybeCode
-      receive session appID code
+      receive session transiturl appID code
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
       getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text

@@ -5,8 +5,10 @@ module Transit.Internal.Network
   (
     -- * build direct hints from port number and the interfaces on the host.
     buildDirectHints
-    -- * build relay hints
+    -- * parse and build transit relay hints
+  , parseTransitRelayUri
   , buildRelayHints
+  , RelayEndpoint(..)
     -- * low level bytestring buffer send/receive over a socket
   , sendBuffer
   , recvBuffer
@@ -21,6 +23,7 @@ module Transit.Internal.Network
   , CommunicationError(..)
   ) where
 
+import Prelude (read)
 import Protolude
 
 import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..))
@@ -57,14 +60,10 @@ import Network.Info
 
 import Network.Socket.ByteString (send, recv)
 import System.Timeout (timeout)
+import Data.Text (splitOn)
+import Data.String (String)
 
 import qualified Data.Text.IO as TIO
-
-transitRelayHost :: Text
-transitRelayHost = "transit.magic-wormhole.io"
-
-transitRelayPort :: Word16
-transitRelayPort = 4001
 
 tcpListener :: IO Socket
 tcpListener = do
@@ -103,11 +102,28 @@ buildDirectHints portnum = do
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
-buildRelayHints :: [ConnectionHint]
-buildRelayHints = [Relay RelayV1 [Hint { hostname = transitRelayHost
-                                       , port = transitRelayPort
-                                       , priority = 0.0
-                                       , ctype = RelayV1 }]]
+data RelayEndpoint
+  = RelayEndpoint
+  { relayhost :: Text
+  , relayport :: Word16
+  } deriving (Show, Eq)
+
+parseTransitRelayUri :: String -> Maybe RelayEndpoint
+parseTransitRelayUri url =
+  let parts = splitOn ":" (toS @String @Text url)
+      (Just host') = atMay parts 1
+      (Just port') = atMay parts 2
+  in
+    if length parts == 3 && "tcp:" `isPrefixOf` url
+    then Just (RelayEndpoint { relayhost = host', relayport = read @Word16 (toS port') })
+    else Nothing
+
+buildRelayHints :: RelayEndpoint -> [ConnectionHint]
+buildRelayHints (RelayEndpoint host' port') =
+  [Relay RelayV1 [Hint { hostname = host'
+                       , port = port'
+                       , priority = 0.0
+                       , ctype = RelayV1 }]]
 
 data TCPEndpoint
   = TCPEndpoint
