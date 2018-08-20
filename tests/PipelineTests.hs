@@ -32,5 +32,6 @@ tests = hspec $ do
           str = "hello"
           putChunk :: Text -> Put
           putChunk s = do
-            putWord32be (fromIntegral @Int 5)
+            let strlen = T.length s
+            putWord32be (fromIntegral @Int strlen)
             putStringUtf8 (toS @Text @String s)
