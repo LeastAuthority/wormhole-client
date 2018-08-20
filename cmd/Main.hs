@@ -29,12 +29,10 @@ import System.Random (randomR, getStdGen)
 import qualified Options.Applicative as Opt
 
 import qualified MagicWormhole
+import qualified Transit
 
 import Paths_hwormhole
-import Helper
 import Options
-import FileTransfer
-import TextMessages
 
 -- | genWordlist would produce a list of the form
 --   [ ("aardwark", "adroitness"),
@@ -89,8 +87,7 @@ getCode session wordList = do
   nameplates <- MagicWormhole.list session
   let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
   putText "Enter the receive wormhole code: "
-  code <- H.runInputT (settings (genPasscodes ns wordList)) getInput
-  return code
+  H.runInputT (settings (genPasscodes ns wordList)) getInput
   where
     settings :: MonadIO m => [Text] -> H.Settings m
     settings possibleWords = H.Settings
@@ -105,6 +102,13 @@ getCode session wordList = do
         Nothing -> return ""
         Just input -> return (toS input)
 
+printSendHelpText :: Text -> IO ()
+printSendHelpText passcode = do
+  TIO.putStrLn $  "Wormhole code is: " <> passcode
+  TIO.putStrLn "On the other computer, please run:"
+  TIO.putStrLn ""
+  TIO.putStrLn $ "wormhole receive " <> passcode
+
 main :: IO ()
 main = do
   options <- Opt.execParser opts
@@ -112,28 +116,14 @@ main = do
   side <- MagicWormhole.generateSide
   let endpoint = relayEndpoint options
   case cmd options of
-    Send tfd -> MagicWormhole.runClient endpoint appID side $ \session ->
-      case tfd of
-        TMsg msg -> do
-          -- text message
-          password <- allocatePassword wordList
-          sendText session (toS password) printSendHelpText msg
-        TFileOrDir filename -> do
-          -- file or dir
-          password <- allocatePassword wordList
-          sendFile session appID (toS password) printSendHelpText filename
-          -- TIO.putStrLn "file or directory transfers not supported yet"
-    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session ->
-      case maybeCode of
-        Nothing -> do -- get the code as a user input
-          code <- getCode session wordList
-          message <- receiveText session code
-          putStr message
-        Just code -> do
-          -- if the sender is doing a file/dir transfer, it will send
-          -- the transit first. (Unfortunate!)
-          message <- receiveText session code
-          putStr message
-  return ()
+    Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
+      password <- allocatePassword wordList
+      Transit.send session appID (toS password) printSendHelpText tfd
+    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
+      code <- getWormholeCode session wordList maybeCode
+      Transit.receive session appID code
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
+      getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
+      getWormholeCode session wordList Nothing = getCode session wordList
+      getWormholeCode _ _ (Just code) = return code

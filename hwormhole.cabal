@@ -3,8 +3,8 @@
 
 name:                hwormhole
 version:             0.1.0.1
-synopsis:            A magic-wormhole client
--- description:
+synopsis:            magic-wormhole client
+description:         A secure way to send files over the Internet using the magic-wormhole protocol
 license:             GPL-3
 license-file:        LICENSE
 author:              Ramakrishnan Muthukrishnan
@@ -16,17 +16,27 @@ extra-source-files:  ChangeLog.md
 cabal-version:       2.0
 data-files:          wordlist.txt
 
+source-repository head
+  type: git
+  location: https://github.com/LeastAuthority/wormhole-client
+
 library
   hs-source-dirs:      src
-  exposed-modules:     FileTransfer
-                     , TextMessages
+  exposed-modules:     Transit
+                     , Transit.Internal.FileTransfer
                      , Transit.Internal.Network
                      , Transit.Internal.Peer
                      , Transit.Internal.Messages
+                     , Transit.Internal.Pipeline
+                     , Transit.Internal.Crypto
   build-depends:       base >=4.6 && <5
                      , bytestring
                      , aeson >=1.4 && <2
+                     , async
+                     , aeson
                      , binary
+                     , conduit
+                     , conduit-extra
                      , magic-wormhole
                      , network >=2.7 && <3
                      , protolude
@@ -37,14 +47,14 @@ library
                      , text
                      , unix-compat
                      , network-info
+                     , filepath
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror=incomplete-patterns
 
 executable hwormhole-exe
   main-is:             Main.hs
   other-modules:       Paths_hwormhole
-                     , Helper
                      , Options
   -- other-extensions:
   build-depends:       base >=4.6 && <5
@@ -52,8 +62,8 @@ executable hwormhole-exe
                      , aeson >=1.4 && <2
                      , binary
                      , haskeline
-                     , magic-wormhole
                      , hwormhole
+                     , magic-wormhole
                      , optparse-applicative
                      , protolude
                      , random
@@ -62,16 +72,21 @@ executable hwormhole-exe
   hs-source-dirs:      cmd
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror=incomplete-patterns
 
 test-suite hwormhole-tests
   type:               exitcode-stdio-1.0
   main-is:            Main.hs
   hs-source-dirs:     tests
   default-extensions: NoImplicitPrelude OverloadedStrings TypeApplications
-  ghc-options: -Wall
+  ghc-options: -Wall -Werror=incomplete-patterns
   build-depends:      base >=4.6 && <5
                     , aeson >=1.4 && <2
+                    , conduit
+                    , binary
+                    , binary-conduit
+                    , conduit-extra
+                    , text
                     , protolude
                     , hspec
                     , saltine
@@ -79,5 +94,6 @@ test-suite hwormhole-tests
                     , hedgehog
   other-modules:      ProtocolTests
                     , MessagesTests
+                    , PipelineTests
                     , Generator
   default-language:   Haskell2010
