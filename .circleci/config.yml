@@ -31,6 +31,22 @@ jobs:
           command: |
              apt-get --quiet --yes install git pkg-config libsodium-dev
 
+      - restore_cache:
+          keys:
+            - buildtools
+
+      - run:
+          name: "install newer version of cabal-install"
+          command: |
+             cabal update
+             cabal install alex happy
+             cabal install cabal-install
+
+      - save_cache:
+          key: buildtools
+          paths:
+            - ~/.cabal/
+
       - run:
           name: "clone haskell-magic-wormhole from git"
           command: |
@@ -41,7 +57,6 @@ jobs:
           name: "Build"
           command: |
             cabal update
-            cabal install happy alex
             cabal sandbox init
             cabal sandbox add-source ./haskell-magic-wormhole
             cabal install --only-dependencies --enable-tests
