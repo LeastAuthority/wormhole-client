@@ -20,6 +20,7 @@ import qualified MagicWormhole
 import Transit.Internal.Network
   ( tcpListener
   , buildDirectHints
+  , buildRelayHints
   , startServer
   , startClient
   , closeConnection
@@ -113,10 +114,11 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
   portnum <- socketPort s
-  hints' <- buildDirectHints portnum
+  directHints <- buildDirectHints portnum
+  let relayHints = buildRelayHints transitserver
   side <- generateTransitSide
   withAsync (startServer s) $ \asyncServer -> do
-    sendTransitMsg conn abilities' hints'
+    sendTransitMsg conn abilities' (directHints <> relayHints)
     -- now expect an offer message
     offerMsg <- receiveWormholeMessage conn
     case Aeson.eitherDecode (toS offerMsg) of
