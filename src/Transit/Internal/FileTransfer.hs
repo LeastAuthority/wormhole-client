@@ -112,13 +112,14 @@ sendFile conn transitserver appid filepath = do
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO ()
 receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
+      relayHints = buildRelayHints transitserver
   s <- tcpListener
   portnum <- socketPort s
   directHints <- buildDirectHints portnum
-  let relayHints = buildRelayHints transitserver
+  let ourHints = directHints <> relayHints
   side <- generateTransitSide
   withAsync (startServer s) $ \asyncServer -> do
-    sendTransitMsg conn abilities' (directHints <> relayHints)
+    sendTransitMsg conn abilities' ourHints
     -- now expect an offer message
     offerMsg <- receiveWormholeMessage conn
     case Aeson.eitherDecode (toS offerMsg) of
@@ -128,7 +129,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
         -- send an answer message with file_ack.
         let ans = Answer (FileAck "ok")
         sendWormholeMessage conn (Aeson.encode ans)
-        -- runTransitProtocol peerAbilities peerHints asyncServer
+        -- TODO: startClient should use peerHints and ourHints
         withAsync (startClient peerHints) $ \asyncClient -> do
           ep <- waitAny [asyncServer, asyncClient]
           let endpoint = snd ep
