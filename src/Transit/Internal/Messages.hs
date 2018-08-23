@@ -25,6 +25,7 @@ import Data.Aeson
   , camelTo2
   )
 
+import qualified Data.Set as Set
 
 data AbilityV1
   = DirectTcpV1
@@ -119,7 +120,7 @@ instance FromJSON Ability where
 data TransitMsg = Error Text
                 | Answer Ack
                 | Transit { abilitiesV1 :: [Ability]
-                          , hintsV1 :: [ConnectionHint] }
+                          , hintsV1 :: Set.Set ConnectionHint }
                 deriving (Eq, Show, Generic)
 
 instance ToJSON TransitMsg where

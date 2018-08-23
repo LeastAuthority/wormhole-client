@@ -3,11 +3,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Transit.Internal.Network
   (
-    -- * build direct hints from port number and the interfaces on the host.
-    buildDirectHints
+    -- * build hints (direct and relay) from relay url, port number and the network interfaces.
+    buildHints
     -- * parse and build transit relay hints
   , parseTransitRelayUri
-  , buildRelayHints
   , RelayEndpoint(..)
     -- * low level bytestring buffer send/receive over a socket
   , sendBuffer
@@ -64,6 +63,7 @@ import Data.Text (splitOn)
 import Data.String (String)
 
 import qualified Data.Text.IO as TIO
+import qualified Data.Set as Set
 
 tcpListener :: IO Socket
 tcpListener = do
@@ -85,7 +85,7 @@ ipv4ToHostname ip =
   in
     show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
 
-buildDirectHints :: PortNumber -> IO [ConnectionHint]
+buildDirectHints :: PortNumber -> IO (Set.Set ConnectionHint)
 buildDirectHints portnum = do
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
@@ -95,12 +95,12 @@ buildDirectHints portnum = do
                      (ipv4ToHostname addr4 /= "0.0.0.0")
                      && (ipv4ToHostname addr4 /= "127.0.0.1"))
         nwInterfaces
-  return $ map (\nwInterface ->
-                  let (IPv4 addr4) = ipv4 nwInterface in
-                  Direct Hint { hostname = ipv4ToHostname addr4
-                              , port = fromIntegral portnum
-                              , priority = 0
-                              , ctype = DirectTcpV1 }) nonLoopbackInterfaces
+  return $ Set.fromList $ map (\nwInterface ->
+                                 let (IPv4 addr4) = ipv4 nwInterface in
+                                   Direct Hint { hostname = ipv4ToHostname addr4
+                                               , port = fromIntegral portnum
+                                               , priority = 0
+                                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
 data RelayEndpoint
   = RelayEndpoint
@@ -118,12 +118,18 @@ parseTransitRelayUri url =
     then Just (RelayEndpoint { relayhost = host', relayport = read @Word16 (toS port') })
     else Nothing
 
-buildRelayHints :: RelayEndpoint -> [ConnectionHint]
+buildRelayHints :: RelayEndpoint -> Set.Set ConnectionHint
 buildRelayHints (RelayEndpoint host' port') =
-  [Relay RelayV1 [Hint { hostname = host'
-                       , port = port'
-                       , priority = 0.0
-                       , ctype = RelayV1 }]]
+  Set.singleton $ Relay RelayV1 [Hint { hostname = host'
+                                      , port = port'
+                                      , priority = 0.0
+                                      , ctype = RelayV1 }]
+
+buildHints :: PortNumber -> RelayEndpoint -> IO (Set.Set ConnectionHint)
+buildHints portnum relayEndpoint = do
+  directHints <- buildDirectHints portnum
+  let relayHints = buildRelayHints relayEndpoint
+  return (directHints <> relayHints)
 
 data TCPEndpoint
   = TCPEndpoint

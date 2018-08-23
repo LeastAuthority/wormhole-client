@@ -36,6 +36,7 @@ library
                      , binary
                      , conduit
                      , conduit-extra
+                     , containers
                      , magic-wormhole
                      , memory
                      , network >=2.7 && <3
@@ -85,6 +86,7 @@ test-suite hwormhole-tests
                     , aeson >=1.4 && <2
                     , bytestring
                     , conduit
+                    , containers
                     , binary
                     , binary-conduit
                     , conduit-extra
