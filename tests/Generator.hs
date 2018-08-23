@@ -59,7 +59,7 @@ transitMsgGen = Gen.choice
   , Answer <$> ackGen
   , Transit
     <$> Gen.list (Range.linear 0 5) abilityGen
-    <*> Gen.list (Range.linear 0 5) connectionHintGen
+    <*> Gen.set (Range.linear 0 5) connectionHintGen
   ]
 
 transitAckGen :: MonadGen m => m TransitAck
