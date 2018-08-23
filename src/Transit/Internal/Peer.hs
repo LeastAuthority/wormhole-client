@@ -35,7 +35,7 @@ import System.FilePath (takeFileName)
 import Transit.Internal.Messages
   ( TransitMsg(..)
   , TransitAck(..)
-  , Ack( FileAck, MsgAck )
+  , Ack( FileAck, MessageAck )
   , Ability(..)
   , AbilityV1(..)
   , ConnectionHint)
@@ -117,7 +117,7 @@ senderOfferExchange conn path = do
     Right (Error errstr) -> return $ Left (toS errstr)
     Right (Answer (FileAck msg)) | msg == "ok" -> return (Right ())
                                  | otherwise -> return $ Left "Did not get file ack. Exiting"
-    Right (Answer (MsgAck _)) -> return $ Left "expected file ack, got message ack instead"
+    Right (Answer (MessageAck _)) -> return $ Left "expected file ack, got message ack instead"
     Right (Transit _ _) -> return $ Left "unexpected transit message"
   where
     sendOffer :: IO ()
