@@ -40,7 +40,7 @@ import Transit.Internal.Messages
   ( TransitMsg( Transit, Answer )
   , Ability(..)
   , AbilityV1(..)
-  , Ack( FileAck ))
+  , Ack( FileAck, MessageAck ))
 import Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline)
@@ -142,6 +142,9 @@ receive session appid code = do
           Right (MagicWormhole.File _ _) -> do
             -- TODO: send answer with message_ack not_ok
             throwIO (ConnectionError "did not expect a file offer")
+          Right (MagicWormhole.Directory _ _ _ _ _) -> do
+            -- TODO: send answer with message_ack not_ok
+            throwIO (ConnectionError "did not expect a directory offer")
           -- ok, we received the Transit Message, send back a transit message
           Left _ ->
             case Aeson.eitherDecode (toS received) of
