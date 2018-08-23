@@ -12,6 +12,7 @@ import Protolude
 import qualified Data.Aeson as Aeson
 import qualified Data.Text.IO as TIO
 import qualified Conduit as C
+import qualified Data.Set as Set
 
 import Network.Socket (socketPort)
 
@@ -19,8 +20,7 @@ import qualified MagicWormhole
 
 import Transit.Internal.Network
   ( tcpListener
-  , buildDirectHints
-  , buildRelayHints
+  , buildHints
   , startServer
   , startClient
   , closeConnection
@@ -72,7 +72,8 @@ sendFile conn transitserver appid filepath = do
   portnum <- socketPort sock'
   side <- generateTransitSide
   withAsync (startServer sock') $ \asyncServer -> do
-    transitResp <- senderTransitExchange conn transitserver portnum
+    ourHints <- buildHints portnum transitserver
+    transitResp <- senderTransitExchange conn (Set.toList ourHints)
     case transitResp of
       Left s -> throwIO (TransitError s)
       Right (Transit peerAbilities peerHints) -> do
@@ -80,46 +81,45 @@ sendFile conn transitserver appid filepath = do
         offerResp <- senderFileOfferExchange conn filepath
         case offerResp of
           Left s -> throwIO (OfferError s)
-          Right _ ->
-            withAsync (startClient peerHints) $ \asyncClient -> do
-            ep <- waitAny [asyncServer, asyncClient]
-            let endpoint = snd ep
-            -- 0. derive transit key
-            let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-            -- 1. create record keys
-                maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
-                                  <*> makeReceiverRecordKey transitKey
-            case maybeRecordKeys of
-              Nothing -> throwIO (TransitError "could not create record keys")
-              Just (sRecordKey, rRecordKey) -> do
-                -- 2. handshakeExchange
-                senderHandshakeExchange endpoint transitKey side
+          Right _ -> do
+            let allHints = Set.toList $ ourHints <> peerHints
+            withAsync (startClient allHints) $ \asyncClient -> do
+              ep <- waitAny [asyncServer, asyncClient]
+              let endpoint = snd ep
+              -- 0. derive transit key
+              let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+              -- 1. create record keys
+                  maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
+                                    <*> makeReceiverRecordKey transitKey
+              case maybeRecordKeys of
+                Nothing -> throwIO (TransitError "could not create record keys")
+                Just (sRecordKey, rRecordKey) -> do
+                  -- 2. handshakeExchange
+                  senderHandshakeExchange endpoint transitKey side
 
-                -- 3. send encrypted chunks of N bytes to the peer
-                (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                -- 4. read a record that should contain the transit Ack.
-                --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                closeConnection endpoint
-                case rxAckMsg of
-                  Right rxSha256Hash ->
-                    when (txSha256Hash /= rxSha256Hash) $
-                    throwIO (Sha256SumError "sha256 mismatch")
-                  Left e -> throwIO (ConnectionError e)
+                  -- 3. send encrypted chunks of N bytes to the peer
+                  (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
+                  -- 4. read a record that should contain the transit Ack.
+                  --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                  rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                  closeConnection endpoint
+                  case rxAckMsg of
+                    Right rxSha256Hash ->
+                      when (txSha256Hash /= rxSha256Hash) $
+                      throwIO (Sha256SumError "sha256 mismatch")
+                    Left e -> throwIO (ConnectionError e)
       Right _ -> throwIO (ConnectionError "error sending transit message")
 
 
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO ()
 receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
-      relayHints = buildRelayHints transitserver
   s <- tcpListener
   portnum <- socketPort s
-  directHints <- buildDirectHints portnum
-  let ourHints = directHints <> relayHints
+  ourHints <- buildHints portnum transitserver
   side <- generateTransitSide
   withAsync (startServer s) $ \asyncServer -> do
-    sendTransitMsg conn abilities' ourHints
+    sendTransitMsg conn abilities' (Set.toList ourHints)
     -- now expect an offer message
     offerMsg <- receiveWormholeMessage conn
     case Aeson.eitherDecode (toS offerMsg) of
@@ -130,7 +130,8 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
         let ans = Answer (FileAck "ok")
         sendWormholeMessage conn (Aeson.encode ans)
         -- TODO: startClient should use peerHints and ourHints
-        withAsync (startClient peerHints) $ \asyncClient -> do
+        let allHints = Set.toList (peerHints <> ourHints)
+        withAsync (startClient allHints) $ \asyncClient -> do
           ep <- waitAny [asyncServer, asyncClient]
           let endpoint = snd ep
           -- 0. derive transit key
