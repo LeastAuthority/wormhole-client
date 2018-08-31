@@ -55,9 +55,8 @@ There is a `--help` command. It works for subcommands as well.
 
 ## What works at the moment
 
-- Message send and receive
+- Message send and receive via direct or relay hints, interoperable with Brian's python client.
 - Completion support for typing in the code
-- File sending to the Python `wormhole` client
 
 ## What's next?
 
