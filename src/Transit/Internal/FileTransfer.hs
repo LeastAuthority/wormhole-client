@@ -9,24 +9,28 @@ where
 
 import Protolude
 
+import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Data.Aeson as Aeson
 import qualified Data.Text.IO as TIO
 import qualified Conduit as C
 import qualified Data.Set as Set
+import qualified Data.ByteString.Lazy as BL
 
 import Network.Socket (socketPort)
 
 import qualified MagicWormhole
 
+import Transit.Internal.Errors (Error(..))
+import Transit.Internal.Crypto (CipherText(..))
 import Transit.Internal.Network
   ( tcpListener
   , buildHints
   , startServer
   , startClient
   , closeConnection
-  , RelayEndpoint)
-
-import Transit.Internal.Errors(CommunicationError(..))
+  , RelayEndpoint
+  , CommunicationError(..)
+  , TCPEndpoint)
 
 import Transit.Internal.Peer
   ( makeSenderRecordKey
@@ -34,19 +38,21 @@ import Transit.Internal.Peer
   , senderHandshakeExchange
   , senderTransitExchange
   , senderFileOfferExchange
-  , receiveAckMessage
   , receiveWormholeMessage
   , sendTransitMsg
   , sendWormholeMessage
   , receiverHandshakeExchange
-  , sendGoodAckMessage
-  , generateTransitSide)
+  , makeGoodAckMessage
+  , generateTransitSide
+  , sendRecord
+  , receiveRecord)
 
 import Transit.Internal.Messages
   ( TransitMsg( Transit, Answer )
   , Ability(..)
   , AbilityV1(..)
-  , Ack( FileAck ))
+  , Ack( FileAck )
+  , TransitAck (..))
 
 import Transit.Internal.Pipeline
   ( sendPipeline
@@ -60,13 +66,33 @@ data MessageType
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 
+sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO (Either Error ())
+sendGoodAckMessage ep key sha256Sum = do
+  let goodAckMessage = makeGoodAckMessage key sha256Sum
+  case goodAckMessage of
+    Right (CipherText encMsg) -> do
+      res <- sendRecord ep encMsg
+      return $ bimap GeneralError (const ()) res
+    Left e -> return $ Left (CipherError e)
+
+receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Error Text)
+receiveAckMessage ep key = do
+  ackBytes <- (fmap . fmap) BL.fromStrict (receiveRecord ep key)
+  case ackBytes of
+    Left e -> return $ Left (CipherError e)
+    Right ack' ->
+      case Aeson.eitherDecode ack' of
+        Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
+                                        | otherwise -> return $ Left (GeneralError (TransitError "transit ack failure"))
+        Left s -> return $ Left (GeneralError (TransitError (toS ("transit ack failure: " <> s))))
+
 -- | Given the magic-wormhole session, appid, password, a function to print a helpful message
 -- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
 -- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO (Either CommunicationError ())
+sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO (Either Error ())
 sendFile conn transitserver appid filepath = do
   -- exchange abilities
   sock' <- tcpListener
@@ -76,19 +102,19 @@ sendFile conn transitserver appid filepath = do
     ourHints <- buildHints portnum transitserver
     transitResp <- senderTransitExchange conn (Set.toList ourHints)
     case transitResp of
-      Left s -> return $ Left (TransitError s)
+      Left s -> return $ Left (GeneralError s)
       Right (Transit peerAbilities peerHints) -> do
         -- send offer for the file
         offerResp <- senderFileOfferExchange conn filepath
         case offerResp of
-          Left s -> return (Left (OfferError s))
+          Left s -> return (Left (GeneralError (OfferError s)))
           Right _ -> do
             let allHints = Set.toList $ ourHints <> peerHints
             withAsync (startClient allHints) $ \asyncClient -> do
               ep <- waitAny [asyncServer, asyncClient]
               let endpoint' = snd ep
               case endpoint' of
-                Left e -> return (Left e)
+                Left e -> return (Left (GeneralError e))
                 Right endpoint -> do
                   -- 0. derive transit key
                   let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
@@ -96,7 +122,7 @@ sendFile conn transitserver appid filepath = do
                       maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
                                         <*> makeReceiverRecordKey transitKey
                   case maybeRecordKeys of
-                    Nothing -> return (Left (TransitError "could not create record keys"))
+                    Nothing -> return (Left (GeneralError (TransitError "could not create record keys")))
                     Just (sRecordKey, rRecordKey) -> do
                       -- 2. handshakeExchange
                       senderHandshakeExchange endpoint transitKey side
@@ -110,13 +136,13 @@ sendFile conn transitserver appid filepath = do
                       case rxAckMsg of
                         Right rxSha256Hash ->
                           if (txSha256Hash /= rxSha256Hash)
-                          then return $ Left (Sha256SumError "sha256 mismatch")
+                          then return $ Left (GeneralError (Sha256SumError "sha256 mismatch"))
                           else return (Right ())
                         Left e -> return $ Left e
-      Right _ -> return $ Left (ConnectionError "error sending transit message")
+      Right _ -> return $ Left (GeneralError (ConnectionError "error sending transit message"))
 
 
-receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either CommunicationError ())
+receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error ())
 receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
@@ -128,7 +154,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
     -- now expect an offer message
     offerMsg <- receiveWormholeMessage conn
     case Aeson.eitherDecode (toS offerMsg) of
-      Left err -> return $ Left (OfferError $ "unable to decode offer msg: " <> toS err)
+      Left err -> return $ Left (GeneralError (OfferError $ "unable to decode offer msg: " <> toS err))
       Right (MagicWormhole.File name size) -> do
         -- TODO: if the file already exist in the current dir, abort
         -- send an answer message with file_ack.
@@ -140,7 +166,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
           ep <- waitAny [asyncServer, asyncClient]
           let endpoint' = snd ep
           case endpoint' of
-            Left e -> return (Left e)
+            Left e -> return (Left (GeneralError e))
             Right endpoint -> do
               -- 0. derive transit key
               let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
@@ -152,7 +178,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
               let maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
                                     <*> makeReceiverRecordKey transitKey
               case maybeRecordKeys of
-                Nothing -> return $ Left (TransitError "could not create record keys")
+                Nothing -> return $ Left (GeneralError (TransitError "could not create record keys"))
                 Just (sRecordKey, rRecordKey) -> do
                   -- 3. receive and decrypt records (length followed by length
                   --    sized packets). Also keep track of decrypted size in
@@ -162,6 +188,6 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
                   _ <- sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
                   -- close the connection
                   Right <$> closeConnection endpoint
-      Right _ -> return $ Left (UnknownPeerMessage "Could not decode message")
-receiveFile _ _ _ _ = return $ Left (UnknownPeerMessage "Could not recognize the message")
+      Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Could not decode message"))
+receiveFile _ _ _ _ = return $ Left (GeneralError (UnknownPeerMessage "Could not recognize the message"))
 

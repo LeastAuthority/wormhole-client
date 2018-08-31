@@ -27,9 +27,11 @@ module Transit
   , Peer.receiveMessageAck
   , Peer.sendMessageAck
   , Peer.decodeTransitMsg
-  , Errors.CommunicationError(..)
+  , Errors.Error(..)
+  , Errors.liftEitherCommError
   , Network.parseTransitRelayUri
   , Network.RelayEndpoint(..)
+  , Network.CommunicationError(..)
   )
 where
 

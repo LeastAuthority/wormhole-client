@@ -15,11 +15,13 @@ module Transit.Internal.Peer
   , receiverHandshakeExchange
   , sendTransitMsg
   , decodeTransitMsg
-  , sendGoodAckMessage
-  , receiveAckMessage
+  , makeGoodAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
   , generateTransitSide
+  , InvalidHandshake(..)
+  , sendRecord
+  , receiveRecord
   )
 where
 
@@ -44,7 +46,6 @@ import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 
-import Transit.Internal.Errors(CommunicationError(..))
 import Transit.Internal.Messages
   ( TransitMsg(..)
   , TransitAck(..)
@@ -55,14 +56,16 @@ import Transit.Internal.Messages
 import Transit.Internal.Network
   ( TCPEndpoint(..)
   , sendBuffer
-  , recvBuffer)
+  , recvBuffer
+  , CommunicationError(..))
 import Transit.Internal.Crypto
   ( encrypt
   , decrypt
   , deriveKeyFromPurpose
   , Purpose(..)
   , PlainText(..)
-  , CipherText(..))
+  , CipherText(..)
+  , CryptoError(..))
 
 import qualified MagicWormhole
 
@@ -101,15 +104,15 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either Text TransitMsg)
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either CommunicationError TransitMsg)
 senderTransitExchange conn hs = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hs) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
-    Left s -> return (Left (toS s))
-    Right (Error errstr) -> return (Left errstr)
-    Right (Answer _) -> return (Left "Answer message from the peer is unexpected")
+    Left s -> return (Left (TransitError (toS s)))
+    Right (Error errstr) -> return (Left (TransitError errstr))
+    Right (Answer _) -> return (Left (TransitError "Answer message from the peer is unexpected"))
   where
     receiveTransitMsg = do
       -- receive the transit from the receiving side
@@ -244,27 +247,11 @@ receiverHandshakeExchange ep key side = do
         rHandshakeMsg = makeReceiverHandshake key
         recvByteString n = recvBuffer ep n
     
-receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either CommunicationError Text)
-receiveAckMessage ep key = do
-  ackBytes <- (fmap . fmap) BL.fromStrict (receiveRecord ep key)
-  case ackBytes of
-    Left e -> return $ Left e
-    Right ack' ->
-      case eitherDecode ack' of
-        Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
-                                        | otherwise -> return $ Left (TransitError "transit ack failure")
-        Left s -> return $ Left (TransitError (toS ("transit ack failure: " <> s)))
-
-sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO (Either CommunicationError ())
-sendGoodAckMessage ep key sha256Sum = do
+makeGoodAckMessage :: SecretBox.Key -> ByteString -> Either CryptoError CipherText
+makeGoodAckMessage key sha256Sum =
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-      maybeEncMsg = encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
-    in
-    case maybeEncMsg of
-      Right (CipherText encMsg) -> do
-        res <- sendRecord ep encMsg
-        return $ bimap identity (const ()) res
-      Left e -> return $ Left e
+  in
+    encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
 
 sendRecord :: TCPEndpoint -> ByteString -> IO (Either CommunicationError Int)
 sendRecord ep record = do
@@ -277,7 +264,7 @@ sendRecord ep record = do
     Left e -> return $ Left (ConnectionError (show e))
     Right x -> return $ Right x
 
-receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO (Either CommunicationError ByteString)
+receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO (Either CryptoError ByteString)
 receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record

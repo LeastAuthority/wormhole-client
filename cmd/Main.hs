@@ -120,7 +120,7 @@ type Password = ByteString
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO (Either Transit.CommunicationError ())
+send :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO (Either Transit.Error ())
 send session transitserver appid password tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
@@ -136,13 +136,13 @@ send session transitserver appid password tfd = do
             let offer = MagicWormhole.Message msg
             Transit.sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
-            Transit.receiveMessageAck conn
+            Transit.liftEitherCommError <$> Transit.receiveMessageAck conn
           Transit.TFile filepath ->
             Transit.sendFile conn transitserver appid filepath
     )
 
 -- | receive a text message or file from the wormhole peer.
-receive :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Text -> IO (Either Transit.CommunicationError ())
+receive :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Text -> IO (Either Transit.Error ())
 receive session transitserver appid code = do
   -- establish the connection
   let codeSplit = Text.split (=='-') code
@@ -162,16 +162,16 @@ receive session transitserver appid code = do
           Right (MagicWormhole.Message message) -> do
             TIO.putStrLn message
             result <- try (Transit.sendMessageAck conn "ok") :: IO (Either IOError ())
-            return $ bimap (const (Transit.ConnectionError "sending the ack message failed")) identity result
+            return $ bimap (const (Transit.GeneralError (Transit.ConnectionError "sending the ack message failed"))) identity result
           Right (MagicWormhole.File _ _) -> do
             Transit.sendMessageAck conn "not_ok"
-            return $ Left (Transit.ConnectionError "did not expect a file offer")
+            return $ Left (Transit.GeneralError (Transit.ConnectionError "did not expect a file offer"))
           Right (MagicWormhole.Directory _ _ _ _ _) ->
-            return $ Left (Transit.UnknownPeerMessage "directory offer is not supported")
+            return $ Left (Transit.GeneralError (Transit.UnknownPeerMessage "directory offer is not supported"))
           -- ok, we received the Transit Message, send back a transit message
           Left received ->
             case (Transit.decodeTransitMsg (toS received)) of
-              Left e -> return $ Left e
+              Left e -> return $ Left (Transit.GeneralError e)
               Right transitMsg ->
                 Transit.receiveFile conn transitserver appid transitMsg
     )
