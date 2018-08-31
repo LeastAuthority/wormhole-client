@@ -18,13 +18,12 @@ module Transit.Internal.Network
   , tcpListener
   , startServer
   , startClient
-    -- * Error
-  , CommunicationError(..)
   ) where
 
 import Prelude (read)
 import Protolude
 
+import Transit.Internal.Errors (CommunicationError(..))
 import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..))
 
 import Network.Socket
@@ -172,21 +171,6 @@ startServer sock' = do
   res <- try $ accept sock' :: IO (Either IOError (Socket, SockAddr))
   close sock'
   return $ bimap (const (ConnectionError "accept: IO error")) (\(conn, _) -> (TCPEndpoint conn Nothing)) res
-
-data CommunicationError
-  = ConnectionError Text
-  -- ^ We could not establish a socket connection.
-  | OfferError Text
-  -- ^ Clients could not exchange offer message.
-  | TransitError Text
-  -- ^ There was an error in transit protocol exchanges.
-  | Sha256SumError Text
-  -- ^ Sender got back a wrong sha256sum from the receiver.
-  | UnknownPeerMessage Text
-  -- ^ We could not identify the message from peer.
-  deriving (Eq, Show)
-
-instance Exception CommunicationError
 
 startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do

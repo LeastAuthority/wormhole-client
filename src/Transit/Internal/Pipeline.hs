@@ -26,7 +26,8 @@ import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 
 import Transit.Internal.Network (TCPEndpoint(..))
-import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..), CryptoError(..))
+import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..))
+import Transit.Internal.Errors(CommunicationError(..))
 
 -- | Given the peer network socket and the file path to be sent, this Conduit
 -- pipeline reads the file, encrypts and send it over the network. A sha256

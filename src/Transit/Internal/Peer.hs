@@ -44,6 +44,7 @@ import Network.Socket (PortNumber)
 import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 
+import Transit.Internal.Errors(CommunicationError(..))
 import Transit.Internal.Messages
   ( TransitMsg(..)
   , TransitAck(..)
@@ -54,8 +55,7 @@ import Transit.Internal.Messages
 import Transit.Internal.Network
   ( TCPEndpoint(..)
   , sendBuffer
-  , recvBuffer
-  , CommunicationError(..))
+  , recvBuffer)
 import Transit.Internal.Crypto
   ( encrypt
   , decrypt
@@ -246,11 +246,14 @@ receiverHandshakeExchange ep key side = do
     
 receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either CommunicationError Text)
 receiveAckMessage ep key = do
-  ackBytes <- BL.fromStrict <$> receiveRecord ep key
-  case eitherDecode ackBytes of
-    Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
-                                    | otherwise -> return $ Left (TransitError "transit ack failure")
-    Left s -> return $ Left (TransitError (toS ("transit ack failure: " <> s)))
+  ackBytes <- (fmap . fmap) BL.fromStrict (receiveRecord ep key)
+  case ackBytes of
+    Left e -> return $ Left e
+    Right ack' ->
+      case eitherDecode ack' of
+        Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
+                                        | otherwise -> return $ Left (TransitError "transit ack failure")
+        Left s -> return $ Left (TransitError (toS ("transit ack failure: " <> s)))
 
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
@@ -269,7 +272,7 @@ sendRecord ep record = do
   _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
   sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
 
-receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
+receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO (Either CommunicationError ByteString)
 receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
@@ -278,8 +281,8 @@ receiveRecord ep key = do
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
     case decrypt key (CipherText encRecord) of
-      Left e -> throwIO e
-      Right (PlainText pt, _) -> return pt
+      Left e -> return $ Left e
+      Right (PlainText plaintext, _) -> return $ Right plaintext
 
 generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
