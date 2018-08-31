@@ -25,8 +25,9 @@ import Transit.Internal.Network
   , startServer
   , startClient
   , closeConnection
-  , RelayEndpoint
-  , CommunicationError(..))
+  , RelayEndpoint)
+
+import Transit.Internal.Errors(CommunicationError(..))
 
 import Transit.Internal.Peer
   ( makeSenderRecordKey
