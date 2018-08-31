@@ -8,16 +8,16 @@
    The ack message is of this form: {"ack": "ok", "sha256": "e4f1684a5375ebf7f1dcde02a66026f937a8c6195adf31813ef21b3ccadfb11f"}
 
 ** Tests (hedgehog round trip tests for json messages) (DONE)
-** support for transit protocol for files.
+** support for transit protocol for files. (DONE)
 *** direct tcp connection
 **** Send (DONE)
-**** Receive
+**** Receive (DONE)
 *** via relay
-**** Send
-**** Receive
-** Setup CI system
+**** Send (DONE)
+**** Receive (DONE)
+** Setup CI system (DONE)
 ** Integration tests with python app.
 ** Try to optimize the wordlist completion in receive (256*2 entry table instead of 256*256 entries)
 ** support for directory transfers via transit protocol.
-** error handling at the moment is terrible. This needs to be thought through and fixed.
-** review the exposed functions from wormhole library and see if they strictly need to be exposed.
+** error handling at the moment is terrible. This needs to be thought through and fixed.(ONGOING)
+** review the exposed functions from wormhole library and see if they strictly need to be exposed.(ONGOING)
