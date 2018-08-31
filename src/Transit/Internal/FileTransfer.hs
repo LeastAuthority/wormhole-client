@@ -65,7 +65,7 @@ transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO ()
+sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO (Either CommunicationError ())
 sendFile conn transitserver appid filepath = do
   -- exchange abilities
   sock' <- tcpListener
@@ -75,43 +75,47 @@ sendFile conn transitserver appid filepath = do
     ourHints <- buildHints portnum transitserver
     transitResp <- senderTransitExchange conn (Set.toList ourHints)
     case transitResp of
-      Left s -> throwIO (TransitError s)
+      Left s -> return $ Left (TransitError s)
       Right (Transit peerAbilities peerHints) -> do
         -- send offer for the file
         offerResp <- senderFileOfferExchange conn filepath
         case offerResp of
-          Left s -> throwIO (OfferError s)
+          Left s -> return (Left (OfferError s))
           Right _ -> do
             let allHints = Set.toList $ ourHints <> peerHints
             withAsync (startClient allHints) $ \asyncClient -> do
               ep <- waitAny [asyncServer, asyncClient]
-              let endpoint = snd ep
-              -- 0. derive transit key
-              let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-              -- 1. create record keys
-                  maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
-                                    <*> makeReceiverRecordKey transitKey
-              case maybeRecordKeys of
-                Nothing -> throwIO (TransitError "could not create record keys")
-                Just (sRecordKey, rRecordKey) -> do
-                  -- 2. handshakeExchange
-                  senderHandshakeExchange endpoint transitKey side
+              let endpoint' = snd ep
+              case endpoint' of
+                Left e -> return (Left e)
+                Right endpoint -> do
+                  -- 0. derive transit key
+                  let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                  -- 1. create record keys
+                      maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
+                                        <*> makeReceiverRecordKey transitKey
+                  case maybeRecordKeys of
+                    Nothing -> return (Left (TransitError "could not create record keys"))
+                    Just (sRecordKey, rRecordKey) -> do
+                      -- 2. handshakeExchange
+                      senderHandshakeExchange endpoint transitKey side
 
-                  -- 3. send encrypted chunks of N bytes to the peer
-                  (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                  -- 4. read a record that should contain the transit Ack.
-                  --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                  rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                  closeConnection endpoint
-                  case rxAckMsg of
-                    Right rxSha256Hash ->
-                      when (txSha256Hash /= rxSha256Hash) $
-                      throwIO (Sha256SumError "sha256 mismatch")
-                    Left e -> throwIO (ConnectionError e)
-      Right _ -> throwIO (ConnectionError "error sending transit message")
+                      -- 3. send encrypted chunks of N bytes to the peer
+                      (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
+                      -- 4. read a record that should contain the transit Ack.
+                      --    If ack is not ok or the sha256sum is incorrect, flag an error.
+                      rxAckMsg <- receiveAckMessage endpoint rRecordKey
+                      closeConnection endpoint
+                      case rxAckMsg of
+                        Right rxSha256Hash ->
+                          if (txSha256Hash /= rxSha256Hash)
+                          then return $ Left (Sha256SumError "sha256 mismatch")
+                          else return (Right ())
+                        Left e -> return $ Left (ConnectionError e)
+      Right _ -> return $ Left (ConnectionError "error sending transit message")
 
 
-receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO ()
+receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either CommunicationError ())
 receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
@@ -133,27 +137,30 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
         let allHints = Set.toList (peerHints <> ourHints)
         withAsync (startClient allHints) $ \asyncClient -> do
           ep <- waitAny [asyncServer, asyncClient]
-          let endpoint = snd ep
-          -- 0. derive transit key
-          let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-          -- 1. handshakeExchange
-          receiverHandshakeExchange endpoint transitKey side
-          -- 2. create sender/receiver record key, sender record key
-          --    for decrypting incoming records, receiver record key
-          --    for sending the file_ack back at the end.
-          let maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
-                                <*> makeReceiverRecordKey transitKey
-          case maybeRecordKeys of
-            Nothing -> throwIO (TransitError "could not create record keys")
-            Just (sRecordKey, rRecordKey) -> do
-              -- 3. receive and decrypt records (length followed by length
-              --    sized packets). Also keep track of decrypted size in
-              --    order to know when to send the file ack at the end.
-              (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
-              TIO.putStrLn (show rxSha256Sum)
-              sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
-              -- close the connection
-              closeConnection endpoint
-      Right _ -> throwIO (UnknownPeerMessage "Could not decode message")
-receiveFile _ _ _ _ = throwIO (UnknownPeerMessage "Could not recognize the message")
+          let endpoint' = snd ep
+          case endpoint' of
+            Left e -> return (Left e)
+            Right endpoint -> do
+              -- 0. derive transit key
+              let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+              -- 1. handshakeExchange
+              receiverHandshakeExchange endpoint transitKey side
+              -- 2. create sender/receiver record key, sender record key
+              --    for decrypting incoming records, receiver record key
+              --    for sending the file_ack back at the end.
+              let maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
+                                    <*> makeReceiverRecordKey transitKey
+              case maybeRecordKeys of
+                Nothing -> return $ Left (TransitError "could not create record keys")
+                Just (sRecordKey, rRecordKey) -> do
+                  -- 3. receive and decrypt records (length followed by length
+                  --    sized packets). Also keep track of decrypted size in
+                  --    order to know when to send the file ack at the end.
+                  (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
+                  TIO.putStrLn (show rxSha256Sum)
+                  sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
+                  -- close the connection
+                  Right <$> closeConnection endpoint
+      Right _ -> return $ Left (UnknownPeerMessage "Could not decode message")
+receiveFile _ _ _ _ = return $ Left (UnknownPeerMessage "Could not recognize the message")
 

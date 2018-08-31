@@ -39,6 +39,7 @@ import Network.Socket
   , close
   , socket
   , Socket(..)
+  , SockAddr
   , connect
   , bind
   , listen
@@ -61,6 +62,7 @@ import Network.Socket.ByteString (send, recv)
 import System.Timeout (timeout)
 import Data.Text (splitOn)
 import Data.String (String)
+import System.IO.Error (IOError)
 
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
@@ -165,11 +167,11 @@ recvBuffer ep = recv (sock ep)
 closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = close (sock ep)
 
-startServer :: Socket -> IO TCPEndpoint
+startServer :: Socket -> IO (Either CommunicationError TCPEndpoint)
 startServer sock' = do
-  (conn, _) <- accept sock'
+  res <- try $ accept sock' :: IO (Either IOError (Socket, SockAddr))
   close sock'
-  return (TCPEndpoint conn Nothing)
+  return $ bimap (const (ConnectionError "accept: IO error")) (\(conn, _) -> (TCPEndpoint conn Nothing)) res
 
 data CommunicationError
   = ConnectionError Text
@@ -186,7 +188,7 @@ data CommunicationError
 
 instance Exception CommunicationError
 
-startClient :: [ConnectionHint] -> IO TCPEndpoint
+startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do
   let sortedHs = sort hs
       (dHs, rHs) = segregateHints sortedHs
@@ -195,8 +197,8 @@ startClient hs = do
                 (asum (map (tryToConnect RelayV1) rHs))
   let maybeEndPoint = ep1 <|> ep2
   case maybeEndPoint of
-    Just ep -> return ep
-    Nothing -> throwIO (ConnectionError "Peer socket is not active")
+    Just ep -> return (Right ep)
+    Nothing -> return (Left (ConnectionError "Peer socket is not active"))
   where
     -- (a -> b -> b) -> b -> [a] -> b
     segregateHints :: [ConnectionHint] -> ([Hint], [Hint])
