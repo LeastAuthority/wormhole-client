@@ -111,7 +111,7 @@ sendFile conn transitserver appid filepath = do
                           if (txSha256Hash /= rxSha256Hash)
                           then return $ Left (Sha256SumError "sha256 mismatch")
                           else return (Right ())
-                        Left e -> return $ Left (ConnectionError e)
+                        Left e -> return $ Left e
       Right _ -> return $ Left (ConnectionError "error sending transit message")
 
 
