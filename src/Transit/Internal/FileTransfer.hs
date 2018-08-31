@@ -127,7 +127,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
     -- now expect an offer message
     offerMsg <- receiveWormholeMessage conn
     case Aeson.eitherDecode (toS offerMsg) of
-      Left err -> throwIO (OfferError $ "unable to decode offer msg: " <> toS err)
+      Left err -> return $ Left (OfferError $ "unable to decode offer msg: " <> toS err)
       Right (MagicWormhole.File name size) -> do
         -- TODO: if the file already exist in the current dir, abort
         -- send an answer message with file_ack.
