@@ -160,6 +160,7 @@ receive session transitserver appid code = do
         someOffer <- Transit.receiveOffer conn
         case someOffer of
           Right (MagicWormhole.Message message) -> do
+            TIO.putStrLn message
             result <- try (Transit.sendMessageAck conn "ok") :: IO (Either IOError ())
             return $ bimap (const (Transit.ConnectionError "sending the ack message failed")) identity result
           Right (MagicWormhole.File _ _) -> do
