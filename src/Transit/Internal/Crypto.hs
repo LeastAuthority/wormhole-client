@@ -5,13 +5,13 @@ module Transit.Internal.Crypto
   , CipherText(..)
   , deriveKeyFromPurpose
   , Purpose(..)
+  , CryptoError(..)
   )
 where
 
 import Protolude
 
-import Transit.Internal.Errors (CommunicationError(..))
-
+import qualified Control.Exception as E
 import qualified Data.ByteString as BS
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
@@ -23,10 +23,18 @@ import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 newtype PlainText = PlainText ByteString
 newtype CipherText = CipherText ByteString
 
+data CryptoError = BadNonce Text
+                 -- ^ The nonce value in the received message is invalid.
+                 | CouldNotDecrypt Text
+                 -- ^ We could not decrypt the incoming encrypted record.
+                 deriving (Eq, Show)
+
+instance E.Exception CryptoError
+
 -- | decrypt the bytestring representing ciphertext block with
 -- the given key. It is assumed that the ciphertext bytestring
 -- is nonce followed by the actual encrypted data.
-decrypt :: SecretBox.Key -> CipherText -> Either CommunicationError (PlainText, SecretBox.Nonce)
+decrypt :: SecretBox.Key -> CipherText -> Either CryptoError (PlainText, SecretBox.Nonce)
 decrypt key (CipherText ciphertext) =
   -- extract nonce from ciphertext.
   let (nonceBytes, record) = BS.splitAt boxNonce ciphertext
@@ -42,7 +50,7 @@ decrypt key (CipherText ciphertext) =
 -- Saltine's nonce seem represented as a big endian bytestring.
 -- However, to interop with the wormhole python client, we need to
 -- use and send nonce as a little endian bytestring.
-encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> Either CommunicationError CipherText
+encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> Either CryptoError CipherText
 encrypt key nonce (PlainText plaintext) =
   let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
       maybeResult = Saltine.decode (toS nonceLE) >>=
