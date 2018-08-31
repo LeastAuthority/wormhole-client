@@ -18,12 +18,13 @@ module Transit.Internal.Network
   , tcpListener
   , startServer
   , startClient
+  -- * Errors
+  , CommunicationError(..)
   ) where
 
 import Prelude (read)
 import Protolude
 
-import Transit.Internal.Errors (CommunicationError(..))
 import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..))
 
 import Network.Socket
@@ -65,6 +66,19 @@ import System.IO.Error (IOError)
 
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
+
+data CommunicationError
+  = ConnectionError Text
+  -- ^ We could not establish a socket connection.
+  | OfferError Text
+  -- ^ Clients could not exchange offer message.
+  | TransitError Text
+  -- ^ There was an error in transit protocol exchanges.
+  | Sha256SumError Text
+  -- ^ Sender got back a wrong sha256sum from the receiver.
+  | UnknownPeerMessage Text
+  -- ^ We could not identify the message from peer.
+  deriving (Eq, Show)
 
 tcpListener :: IO Socket
 tcpListener = do
