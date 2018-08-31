@@ -145,14 +145,14 @@ receiveOffer conn = do
     Right dir@(MagicWormhole.Directory _ _ _ _ _) -> return $ Right dir
     Left _ -> return $ Left received
 
-receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO ()
+receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO (Either CommunicationError ())
 receiveMessageAck conn = do
   rxTransitMsg <- receiveWormholeMessage conn
   case eitherDecode (toS rxTransitMsg) of
-    Left s -> throwIO (TransitError (show s))
-    Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
-                                     | otherwise -> throwIO (TransitError "Message ack failed")
-    Right s -> throwIO (TransitError (show s))
+    Left s -> return $ Left (TransitError (show s))
+    Right (Answer (MessageAck msg')) | msg' == "ok" -> return $ Right ()
+                                     | otherwise -> return $ Left (TransitError "Message ack failed")
+    Right s -> return $ Left (TransitError (show s))
 
 sendMessageAck :: MagicWormhole.EncryptedConnection -> Text -> IO ()
 sendMessageAck conn msg = do
