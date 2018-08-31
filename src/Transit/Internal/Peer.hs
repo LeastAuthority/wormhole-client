@@ -244,13 +244,13 @@ receiverHandshakeExchange ep key side = do
         rHandshakeMsg = makeReceiverHandshake key
         recvByteString n = recvBuffer ep n
     
-receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Text Text)
+receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either CommunicationError Text)
 receiveAckMessage ep key = do
   ackBytes <- BL.fromStrict <$> receiveRecord ep key
   case eitherDecode ackBytes of
     Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
-                                    | otherwise -> return (Left "transit ack failure")
-    Left s -> return (Left $ toS ("transit ack failure: " <> s))
+                                    | otherwise -> return $ Left (TransitError "transit ack failure")
+    Left s -> return $ Left (TransitError (toS ("transit ack failure: " <> s)))
 
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
