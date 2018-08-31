@@ -135,7 +135,9 @@ send session transitserver appid password tfd = do
             Transit.sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
             Transit.receiveMessageAck conn
-          Transit.TFile filepath -> Transit.sendFile conn transitserver appid filepath
+          Transit.TFile filepath -> do
+            result <- Transit.sendFile conn transitserver appid filepath
+            either (TIO.putStrLn . show) return result
     )
 
 -- | receive a text message or file from the wormhole peer.
@@ -154,8 +156,8 @@ receive session transitserver appid code = do
         -- and then offer comes in. `Transit.receiveOffer' will attempt to interpret
         -- the bytestring as an offer message. If that fails, it passes the raw bytestring
         -- as a Left value so that we can try to decode it as a TransitMsg.
-        maybeOffer <- Transit.receiveOffer conn
-        case maybeOffer of
+        someOffer <- Transit.receiveOffer conn
+        case someOffer of
           Right (MagicWormhole.Message message) -> do
             Transit.sendMessageAck conn "ok"
             TIO.putStrLn message
@@ -168,8 +170,9 @@ receive session transitserver appid code = do
           Left received ->
             case (Transit.decodeTransitMsg (toS received)) of
               Left e -> throwIO e
-              Right transitMsg ->
-                Transit.receiveFile conn transitserver appid transitMsg
+              Right transitMsg -> do
+                result <- Transit.receiveFile conn transitserver appid transitMsg
+                either (TIO.putStrLn . show) return result
     )
 
 main :: IO ()
