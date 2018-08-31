@@ -40,9 +40,9 @@ import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.FilePath (takeFileName)
-import Network.Socket (PortNumber)
 import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
+import System.IO.Error (IOError)
 
 import Transit.Internal.Errors(CommunicationError(..))
 import Transit.Internal.Messages
@@ -255,22 +255,27 @@ receiveAckMessage ep key = do
                                         | otherwise -> return $ Left (TransitError "transit ack failure")
         Left s -> return $ Left (TransitError (toS ("transit ack failure: " <> s)))
 
-sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
+sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO (Either CommunicationError ())
 sendGoodAckMessage ep key sha256Sum = do
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
       maybeEncMsg = encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
     in
     case maybeEncMsg of
-      Right (CipherText encMsg) -> sendRecord ep encMsg >> return ()
-      Left e -> throwIO e
+      Right (CipherText encMsg) -> do
+        res <- sendRecord ep encMsg
+        return $ bimap identity (const ()) res
+      Left e -> return $ Left e
 
-sendRecord :: TCPEndpoint -> ByteString -> IO Int
+sendRecord :: TCPEndpoint -> ByteString -> IO (Either CommunicationError Int)
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
   -- format sz as a fixed 4 byte bytestring
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
   _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
-  sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
+  res <- try $ sendBuffer ep record :: IO (Either IOError Int)
+  case res of
+    Left e -> return $ Left (ConnectionError (show e))
+    Right x -> return $ Right x
 
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO (Either CommunicationError ByteString)
 receiveRecord ep key = do

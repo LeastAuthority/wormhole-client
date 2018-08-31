@@ -163,7 +163,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
                   --    order to know when to send the file ack at the end.
                   (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
                   TIO.putStrLn (show rxSha256Sum)
-                  sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
+                  _ <- sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
                   -- close the connection
                   Right <$> closeConnection endpoint
       Right _ -> return $ Left (UnknownPeerMessage "Could not decode message")
