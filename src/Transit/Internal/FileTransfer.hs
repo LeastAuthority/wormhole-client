@@ -104,7 +104,7 @@ sendFile conn transitserver appid filepath = do
     transitResp <- senderTransitExchange conn (Set.toList ourHints)
     case transitResp of
       Left s -> return $ Left (NetworkError s)
-      Right (Transit peerAbilities peerHints) -> do
+      Right (Transit _peerAbilities peerHints) -> do
         -- send offer for the file
         offerResp <- senderFileOfferExchange conn filepath
         case offerResp of
@@ -146,7 +146,7 @@ sendFile conn transitserver appid filepath = do
 
 
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error ())
-receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
+receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   s <- tcpListener
   portnum <- socketPort s
