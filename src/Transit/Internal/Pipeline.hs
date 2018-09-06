@@ -85,7 +85,7 @@ decryptC key = loop Saltine.zero
                   seqNum' = fromMaybe (panic "nonce decode failed") $
                             Saltine.decode (toS seqNumLE)
               if nonce /= seqNum'
-                then throwIO (BadNonce "received out-of-order packets")
+                then throwIO (BadNonce "received incorrect nonce")
                 else do
                 C.yield plainText
                 loop (Saltine.nudge seqNum)
