@@ -24,7 +24,7 @@ import Transit.Internal.Crypto (CryptoError)
 tests :: IO ()
 tests = hspec $ do
   describe "assembleRecordC tests" $ do
-    it "test with a small bytestring" $ do
+    it "tests assembleRecordC with a short bytestring input" $ do
       let str = "hello" :: ByteString
       xs <- liftIO $ C.runConduitRes $
             CSB.sourcePut (putChunk str)
@@ -34,7 +34,7 @@ tests = hspec $ do
       xs `shouldBe` (toS str)
 
   describe "decryptC tests" $ do
-    it "encryptC/decryptC round trip" $ do
+    it "tests a encryptC/decryptC round trip" $ do
       let key = fromMaybe (panic "cannot decode key") $
                 Saltine.decode ("0123456789abcdef0123456789abcdef" :: ByteString)
           plaintext = "foobar" :: ByteString
@@ -47,7 +47,7 @@ tests = hspec $ do
               .| CB.sinkLbs)
       xs `shouldBe` (toS plaintext)
 
-    it "decryptC with a forged sequence number" $ do
+    it "throws CryptoError when a wrong nonce is encountered" $ do
       -- create a packet with a non-zero nonce concatenated with
       -- random input. Feed it as a source into decryptC and feed
       -- output into a sinkLbs. This should throw a BadNonce
