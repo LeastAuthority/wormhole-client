@@ -3,6 +3,8 @@ module Transit.Internal.Pipeline
   , receivePipeline
   -- * for tests
   , assembleRecordC
+  , decryptC
+  , encryptC
   )
 where
 
