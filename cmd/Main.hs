@@ -25,7 +25,6 @@ import qualified Data.Text.IO as TIO
 import qualified System.Console.Haskeline as H
 import qualified System.Console.Haskeline.Completion as HC
 import System.Random (randomR, getStdGen)
-import qualified Options.Applicative as Opt
 import qualified Crypto.Spake2 as Spake2
 
 import Data.String (String)
@@ -178,7 +177,7 @@ receive session transitserver appid code = do
 
 main :: IO ()
 main = do
-  options <- Opt.execParser opts
+  options <- commandlineParser
   wordList <- genWordList =<< getDataFileName "wordlist.txt"
   side <- MagicWormhole.generateSide
   let endpoint = relayEndpoint options
