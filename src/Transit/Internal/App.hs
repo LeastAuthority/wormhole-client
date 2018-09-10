@@ -76,8 +76,9 @@ allocatePassword wordlist = do
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: Env -> MagicWormhole.Session -> Password -> MessageType -> ExceptT Error IO ()
-send env session password tfd = do
+send :: MagicWormhole.Session -> Password -> MessageType -> ReaderT Env (ExceptT Error IO) ()
+send session password tfd = do
+  env <- ask
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
   let options = config env
@@ -88,7 +89,7 @@ send env session password tfd = do
   peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
   let (MagicWormhole.Nameplate n) = nameplate
   liftIO $ printSendHelpText $ toS n <> "-" <> toS password
-  ExceptT $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
+  lift $ ExceptT $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn ->
         case tfd of
           TMsg msg -> do
@@ -101,8 +102,9 @@ send env session password tfd = do
     )
 
 -- | receive a text message or file from the wormhole peer.
-receive :: Env -> MagicWormhole.Session -> Text -> ExceptT Error IO ()
-receive env session code = do
+receive :: MagicWormhole.Session -> Text -> ReaderT Env (ExceptT Error IO) ()
+receive session code = do
+  env <- ask
   -- establish the connection
   let options = config env
   let appid = appID env
@@ -111,7 +113,7 @@ receive env session code = do
   let (Just nameplate) = headMay codeSplit
   mailbox <- liftIO $ MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
   peer <- liftIO $ MagicWormhole.open session mailbox
-  ExceptT$ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
+  lift $ ExceptT $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
     (\conn -> do
         -- unfortunately, the receiver has no idea which message to expect.
         -- If the sender is only sending a text message, it gets an offer first.
@@ -191,19 +193,20 @@ newtype App a = App {
   } deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env, MonadError Error)
 
 
-app :: Env -> ExceptT Error IO ()
-app env = do
+app :: ReaderT Env (ExceptT Error IO) ()
+app = do
+  env <- ask
   let options = config env
       endpoint = relayEndpoint options
   case cmd options of
     Send tfd ->
-      ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
+      lift $ ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
       password <- allocatePassword (wordList env)
-      runExceptT $ send env session (toS password) tfd
+      runExceptT (runReaderT (send session (toS password) tfd) env)
     Receive maybeCode ->
-      ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
+      lift $ ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
       code <- getWormholeCode session (wordList env) maybeCode
-      runExceptT $ receive env session code
+      runExceptT (runReaderT (receive session code) env)
   where
     getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
     getWormholeCode session wordlist Nothing = getCode session wordlist
