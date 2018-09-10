@@ -34,6 +34,8 @@ module Transit
   , Network.CommunicationError(..)
   , Conf.Options(..)
   , Conf.Command(..)
+  , App.Env(..)
+  , App.prepareAppEnv
   )
 where
 
@@ -42,3 +44,4 @@ import qualified Transit.Internal.Peer as Peer
 import qualified Transit.Internal.Network as Network
 import qualified Transit.Internal.Errors as Errors
 import qualified Transit.Internal.Conf as Conf
+import qualified Transit.Internal.App as App
