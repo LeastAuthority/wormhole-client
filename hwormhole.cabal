@@ -23,6 +23,7 @@ source-repository head
 library
   hs-source-dirs:      src
   exposed-modules:     Transit
+                     , Transit.Internal.App
                      , Transit.Internal.Conf
                      , Transit.Internal.Errors
                      , Transit.Internal.FileTransfer
@@ -31,6 +32,7 @@ library
                      , Transit.Internal.Messages
                      , Transit.Internal.Pipeline
                      , Transit.Internal.Crypto
+  other-modules:       Paths_hwormhole
   build-depends:       base >=4.6 && <5
                      , bytestring
                      , async
@@ -57,8 +59,7 @@ library
 
 executable hwormhole-exe
   main-is:             Main.hs
-  other-modules:       Paths_hwormhole
-                     , Options
+  other-modules:       Options
   -- other-extensions:
   build-depends:       base >=4.6 && <5
                      , bytestring
