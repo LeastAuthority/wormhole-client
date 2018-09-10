@@ -33,26 +33,7 @@ import System.IO.Error (IOError)
 import qualified MagicWormhole
 import qualified Transit
 
-import Paths_hwormhole
 import Options
-
--- | genWordlist would produce a list of the form
---   [ ("aardwark", "adroitness"),
---     ("absurd", "adviser"),
---     ....
---     ("zulu", "yucatan") ]
-genWordList :: FilePath -> IO [(Text, Text)]
-genWordList wordlistFile = do
-  file <- TIO.readFile wordlistFile
-  let contents = map toWordPair $ Text.lines file
-  return contents
-    where
-      toWordPair :: Text -> (Text, Text)
-      toWordPair line =
-        let ws = map Text.toLower $ Text.words line
-            Just firstWord = atMay ws 1
-            Just sndWord = atMay ws 2
-        in (firstWord, sndWord)
 
 genPasscodes :: [Text] -> [(Text, Text)] -> [Text]
 genPasscodes nameplates wordpairs =
@@ -119,10 +100,13 @@ type Password = ByteString
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO (Either Transit.Error ())
-send session transitserver appid password tfd = do
+send :: Transit.Env -> MagicWormhole.Session -> Password -> Transit.MessageType -> IO (Either Transit.Error ())
+send env session password tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
+  let options = Transit.config env
+  let appid = Transit.appID env
+  let transitserver = transitUrl options
   nameplate <- MagicWormhole.allocate session
   mailbox <- MagicWormhole.claim session nameplate
   peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
@@ -141,9 +125,12 @@ send session transitserver appid password tfd = do
     )
 
 -- | receive a text message or file from the wormhole peer.
-receive :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Text -> IO (Either Transit.Error ())
-receive session transitserver appid code = do
+receive :: Transit.Env -> MagicWormhole.Session -> Text -> IO (Either Transit.Error ())
+receive env session code = do
   -- establish the connection
+  let options = Transit.config env
+  let appid = Transit.appID env
+  let transitserver = transitUrl options
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
   mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
@@ -177,22 +164,20 @@ receive session transitserver appid code = do
 
 main :: IO ()
 main = do
-  options <- commandlineParser
-  wordList <- genWordList =<< getDataFileName "wordlist.txt"
-  side <- MagicWormhole.generateSide
-  let endpoint = relayEndpoint options
-      transiturl = transitUrl options
+  env <- Transit.prepareAppEnv appid "wordlist.txt" =<< commandlineParser
+  let options = Transit.config env
+      endpoint = relayEndpoint options
   case cmd options of
-    Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
-      password <- allocatePassword wordList
-      result <- send session transiturl appID (toS password) tfd
+    Send tfd -> MagicWormhole.runClient endpoint (Transit.appID env) (Transit.side env) $ \session -> do
+      password <- allocatePassword (Transit.wordList env)
+      result <- send env session (toS password) tfd
       either (TIO.putStrLn . show) return result
-    Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
-      code <- getWormholeCode session wordList maybeCode
-      result <- receive session transiturl appID code
+    Receive maybeCode -> MagicWormhole.runClient endpoint (Transit.appID env) (Transit.side env) $ \session -> do
+      code <- getWormholeCode session (Transit.wordList env) maybeCode
+      result <- receive env session code
       either (TIO.putStrLn . show) return result
     where
-      appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
+      appid = "lothar.com/wormhole/text-or-file-xfer"
       getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
       getWormholeCode session wordList Nothing = getCode session wordList
       getWormholeCode _ _ (Just code) = return code
