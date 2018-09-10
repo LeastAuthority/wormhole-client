@@ -21,6 +21,7 @@
 module Transit
   ( App.Env(..)
   , App.prepareAppEnv
+  , App.app
   , App.runApp
   , Conf.Options(..)
   , Conf.Command(..)
