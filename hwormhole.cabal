@@ -41,18 +41,20 @@ library
                      , conduit
                      , conduit-extra
                      , containers
+                     , cryptonite
+                     , filepath
+                     , haskeline
+                     , hex
                      , magic-wormhole
                      , memory
                      , network >=2.7 && <3
+                     , network-info
                      , protolude
-                     , hex
+                     , random
                      , saltine
-                     , cryptonite
                      , spake2 >= 0.4
                      , text
                      , unix-compat
-                     , network-info
-                     , filepath
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
   ghc-options: -Wall -Werror=incomplete-patterns
@@ -62,16 +64,9 @@ executable hwormhole-exe
   other-modules:       Options
   -- other-extensions:
   build-depends:       base >=4.6 && <5
-                     , bytestring
-                     , aeson >=1.4 && <2
-                     , binary
-                     , haskeline
                      , hwormhole
-                     , magic-wormhole
                      , optparse-applicative
                      , protolude
-                     , random
-                     , spake2 >= 0.4
                      , text
   hs-source-dirs:      cmd
   default-language:    Haskell2010
