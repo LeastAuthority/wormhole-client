@@ -3,6 +3,7 @@ module Transit.Internal.App
   ( Env(..)
   , prepareAppEnv
   , app
+  , runApp
   )
 where
 
@@ -75,19 +76,19 @@ allocatePassword wordlist = do
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: Env -> MagicWormhole.Session -> Password -> MessageType -> IO (Either Error ())
+send :: Env -> MagicWormhole.Session -> Password -> MessageType -> ExceptT Error IO ()
 send env session password tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
   let options = config env
   let appid = appID env
   let transitserver = transitUrl options
-  nameplate <- MagicWormhole.allocate session
-  mailbox <- MagicWormhole.claim session nameplate
-  peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
+  nameplate <- liftIO $ MagicWormhole.allocate session
+  mailbox <- liftIO $ MagicWormhole.claim session nameplate
+  peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
   let (MagicWormhole.Nameplate n) = nameplate
-  printSendHelpText $ toS n <> "-" <> toS password
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
+  liftIO $ printSendHelpText $ toS n <> "-" <> toS password
+  ExceptT $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
     (\conn ->
         case tfd of
           TMsg msg -> do
@@ -100,7 +101,7 @@ send env session password tfd = do
     )
 
 -- | receive a text message or file from the wormhole peer.
-receive :: Env -> MagicWormhole.Session -> Text -> IO (Either Error ())
+receive :: Env -> MagicWormhole.Session -> Text -> ExceptT Error IO ()
 receive env session code = do
   -- establish the connection
   let options = config env
@@ -108,9 +109,9 @@ receive env session code = do
   let transitserver = transitUrl options
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
-  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
-  peer <- MagicWormhole.open session mailbox
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
+  mailbox <- liftIO $ MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
+  peer <- liftIO $ MagicWormhole.open session mailbox
+  ExceptT$ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
     (\conn -> do
         -- unfortunately, the receiver has no idea which message to expect.
         -- If the sender is only sending a text message, it gets an offer first.
@@ -189,6 +190,7 @@ newtype App a = App {
   runApp :: ReaderT Env (ExceptT Error IO) a
   } deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env, MonadError Error)
 
+
 app :: Env -> ExceptT Error IO ()
 app env = do
   let options = config env
@@ -197,11 +199,11 @@ app env = do
     Send tfd ->
       ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
       password <- allocatePassword (wordList env)
-      send env session (toS password) tfd
+      runExceptT $ send env session (toS password) tfd
     Receive maybeCode ->
       ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
       code <- getWormholeCode session (wordList env) maybeCode
-      receive env session code
+      runExceptT $ receive env session code
   where
     getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
     getWormholeCode session wordlist Nothing = getCode session wordlist
