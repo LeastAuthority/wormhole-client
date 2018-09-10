@@ -19,29 +19,22 @@
 -- so that each message is encrypted using NaCl SecretBox.
 --
 module Transit
-  ( FileTransfer.sendFile
-  , FileTransfer.receiveFile
-  , FileTransfer.MessageType(..)
-  , Peer.sendOffer
-  , Peer.receiveOffer
-  , Peer.receiveMessageAck
-  , Peer.sendMessageAck
-  , Peer.decodeTransitMsg
-  , Errors.Error(..)
-  , Errors.liftEitherCommError
-  , Network.parseTransitRelayUri
-  , Network.RelayEndpoint(..)
-  , Network.CommunicationError(..)
+  ( App.Env(..)
+  , App.prepareAppEnv
+  , App.runApp
   , Conf.Options(..)
   , Conf.Command(..)
-  , App.Env(..)
-  , App.prepareAppEnv
+  , Errors.Error(..)
+  , Errors.liftEitherCommError
+  , FileTransfer.MessageType(..)
+  , MagicWormhole.parseWebSocketEndpoint
+  , Network.parseTransitRelayUri
   )
 where
 
 import qualified Transit.Internal.FileTransfer as FileTransfer
-import qualified Transit.Internal.Peer as Peer
 import qualified Transit.Internal.Network as Network
 import qualified Transit.Internal.Errors as Errors
 import qualified Transit.Internal.Conf as Conf
 import qualified Transit.Internal.App as App
+import qualified MagicWormhole
