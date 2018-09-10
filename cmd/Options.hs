@@ -16,7 +16,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Options where
+module Options
+  ( commandlineParser
+  , Options(..)
+  , Command(..)
+  )
+where
 
 import Protolude
 
@@ -82,3 +87,6 @@ commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
 
 opts :: Opt.ParserInfo Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
+
+commandlineParser :: IO Options
+commandlineParser = Opt.execParser opts
