@@ -54,6 +54,7 @@ library
                      , saltine
                      , spake2 >= 0.4
                      , text
+                     , transformers
                      , unix-compat
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
@@ -68,6 +69,7 @@ executable hwormhole-exe
                      , optparse-applicative
                      , protolude
                      , text
+                     , transformers
   hs-source-dirs:      cmd
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications

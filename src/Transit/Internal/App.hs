@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Transit.Internal.App
   ( Env(..)
   , prepareAppEnv
@@ -17,6 +18,7 @@ import qualified Crypto.Spake2 as Spake2
 import System.IO.Error (IOError)
 import System.Random (randomR, getStdGen)
 import Data.String (String)
+import Control.Monad.Trans.Except (ExceptT(..))
 
 import Transit.Internal.Conf (Options(..), Command(..))
 import Transit.Internal.Errors (Error(..), liftEitherCommError, CommunicationError(..))
@@ -183,20 +185,21 @@ getCode session wordlist = do
         Nothing -> return ""
         Just input -> return (toS input)
 
--- newtype AppM a = AppM ( Env -> IO (Either AppError a) )
--- type AppM a = ReaderT Env (EitherT AppError IO a)
+newtype App a = App {
+  runApp :: ReaderT Env (ExceptT Error IO) a
+  } deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env, MonadError Error)
 
-app :: Env -> IO (Either Error ())
+app :: Env -> ExceptT Error IO ()
 app env = do
   let options = config env
       endpoint = relayEndpoint options
   case cmd options of
     Send tfd ->
-      MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
+      ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
       password <- allocatePassword (wordList env)
       send env session (toS password) tfd
     Receive maybeCode ->
-      MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
+      ExceptT $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
       code <- getWormholeCode session (wordList env) maybeCode
       receive env session code
   where
