@@ -32,6 +32,8 @@ module Transit
   , Network.parseTransitRelayUri
   , Network.RelayEndpoint(..)
   , Network.CommunicationError(..)
+  , Conf.Options(..)
+  , Conf.Command(..)
   )
 where
 
@@ -39,3 +41,4 @@ import qualified Transit.Internal.FileTransfer as FileTransfer
 import qualified Transit.Internal.Peer as Peer
 import qualified Transit.Internal.Network as Network
 import qualified Transit.Internal.Errors as Errors
+import qualified Transit.Internal.Conf as Conf

@@ -31,18 +31,6 @@ import qualified MagicWormhole
 
 import Transit
 
-data Options
-  = Options
-  { cmd :: Command
-  , relayEndpoint :: MagicWormhole.WebSocketEndpoint
-  , transitUrl :: Transit.RelayEndpoint
-  } deriving (Eq, Show)
-
-data Command
-  = Send MessageType
-  | Receive (Maybe Text)
-  deriving (Eq, Show)
-
 optionsParser :: Opt.Parser Options
 optionsParser
   = Options
