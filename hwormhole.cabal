@@ -54,6 +54,7 @@ library
                      , unix-compat     >= 0.5.0   && < 1.0
                      , network-info    >= 0.2.0   && < 1.0
                      , filepath        >= 1.4.0   && < 2.0
+                     , transformers
   other-modules:       Paths_hwormhole
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
@@ -71,6 +72,7 @@ executable hwormhole-exe
                      , optparse-applicative
                      , protolude
                      , text
+                     , transformers
   hs-source-dirs:      cmd
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
