@@ -25,6 +25,7 @@ import Transit.Internal.Crypto (CipherText(..))
 import Transit.Internal.Network
   ( tcpListener
   , buildHints
+  , buildRelayHints
   , startServer
   , startClient
   , closeConnection
@@ -100,6 +101,7 @@ sendFile conn transitserver appid filepath = do
   side <- generateTransitSide
   withAsync (startServer sock') $ \asyncServer -> do
     ourHints <- buildHints portnum transitserver
+    let ourRelayHints = buildRelayHints transitserver
     transitResp <- senderTransitExchange conn (Set.toList ourHints)
     case transitResp of
       Left s -> return $ Left (GeneralError s)
@@ -109,7 +111,8 @@ sendFile conn transitserver appid filepath = do
         case offerResp of
           Left s -> return (Left (GeneralError (OfferError s)))
           Right _ -> do
-            let allHints = Set.toList $ ourHints <> peerHints
+            -- combine our relay hints with peer's direct and relay hints
+            let allHints = Set.toList $ ourRelayHints <> peerHints
             withAsync (startClient allHints) $ \asyncClient -> do
               ep <- waitAny [asyncServer, asyncClient]
               let endpoint' = snd ep
@@ -150,6 +153,7 @@ receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
   s <- tcpListener
   portnum <- socketPort s
   ourHints <- buildHints portnum transitserver
+  let ourRelayHints = buildRelayHints transitserver
   side <- generateTransitSide
   withAsync (startServer s) $ \asyncServer -> do
     sendTransitMsg conn abilities' (Set.toList ourHints)
@@ -162,8 +166,8 @@ receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
         -- send an answer message with file_ack.
         let ans = Answer (FileAck "ok")
         sendWormholeMessage conn (Aeson.encode ans)
-        -- TODO: startClient should use peerHints and ourHints
-        let allHints = Set.toList (peerHints <> ourHints)
+        -- combine our relay hints with peer's direct and relay hints
+        let allHints = Set.toList (peerHints <> ourRelayHints)
         withAsync (startClient allHints) $ \asyncClient -> do
           ep <- waitAny [asyncServer, asyncClient]
           let endpoint' = snd ep

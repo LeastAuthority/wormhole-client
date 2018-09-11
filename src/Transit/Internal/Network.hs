@@ -5,6 +5,7 @@ module Transit.Internal.Network
   (
     -- * build hints (direct and relay) from relay url, port number and the network interfaces.
     buildHints
+  , buildRelayHints
     -- * parse and build transit relay hints
   , parseTransitRelayUri
   , RelayEndpoint(..)
@@ -159,6 +160,7 @@ tryToConnect ability h@(Hint _ _ host portnum) =
                     (\(sock', _) -> close sock')
                     (\(sock', addr) -> do
                         connect sock' $ addrAddress addr
+                        TIO.putStrLn "Connected"
                         return (TCPEndpoint sock' (Just ability))))
   where
     init host' port' = withSocketsDo $ do
@@ -190,6 +192,8 @@ startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do
   let sortedHs = sort hs
       (dHs, rHs) = segregateHints sortedHs
+  TIO.putStrLn ("Direct Hints" <> (show dHs))
+  TIO.putStrLn ("Relay Hints" <> (show rHs))
   (ep1, ep2) <- concurrently
                 (asum (map (tryToConnect DirectTcpV1) dHs))
                 (asum (map (tryToConnect RelayV1) rHs))
