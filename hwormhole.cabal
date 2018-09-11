@@ -81,6 +81,7 @@ test-suite hwormhole-tests
   ghc-options: -Wall -Werror=incomplete-patterns
   build-depends:      base >=4.6 && <5
                     , aeson >=1.4 && <2
+                    , bytestring
                     , conduit
                     , binary
                     , binary-conduit
