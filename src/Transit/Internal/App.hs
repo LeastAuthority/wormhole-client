@@ -198,22 +198,27 @@ receive session code = do
     )
   liftEither result
 
-app :: App () -- ReaderT Env (ExceptT Error IO) ()
+app :: App ()
 app = do
   env <- ask
   let options = config env
       endpoint = relayEndpoint options
   case cmd options of
     Send tfd ->
-      liftEither =<< (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
-                         password <- allocatePassword (wordList env)
-                         runApp (send session (toS password) tfd) env)
+      (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
+          runApp (sendSession tfd session) env) >>= liftEither
     Receive maybeCode ->
-      liftEither =<< (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
-                         code <- getWormholeCode session (wordList env) maybeCode
-                         runApp (receive session code) env)
+      (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
+          runApp (receiveSession maybeCode session) env) >>= liftEither
   where
     getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
     getWormholeCode session wordlist Nothing = getCode session wordlist
     getWormholeCode _ _ (Just code) = return code
-
+    sendSession offerMsg session = do
+      env <- ask
+      password <- liftIO $ allocatePassword (wordList env)
+      send session (toS password) offerMsg
+    receiveSession code session = do
+      env <- ask
+      maybeCode <- liftIO $ getWormholeCode session (wordList env) code
+      receive session maybeCode
