@@ -47,6 +47,7 @@ library
                      , hex
                      , magic-wormhole
                      , memory
+                     , mtl
                      , network >=2.7 && <3
                      , network-info
                      , protolude
