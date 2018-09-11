@@ -45,6 +45,13 @@ library
                      , network         >= 2.7     && < 3
                      , protolude       >= 0.2.1   && < 1.0
                      , haskeline
+                     , hex
+                     , magic-wormhole
+                     , memory
+                     , mtl
+                     , network >=2.7 && <3
+                     , network-info
+                     , protolude
                      , random
                      , hex             >= 0.1.2   && < 1.0
                      , saltine         == 0.1.0.1 && < 1.0

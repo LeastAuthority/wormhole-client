@@ -21,14 +21,13 @@ import Protolude
 
 import qualified Data.Text.IO as TIO
 import qualified Transit
-import Control.Monad.Trans.Except (runExceptT)
 
 import Options
 
 main :: IO ()
 main = do
   env <- Transit.prepareAppEnv appid "wordlist.txt" =<< commandlineParser
-  result <- runExceptT (runReaderT Transit.app env)
+  result <- Transit.runApp Transit.app env
   either (TIO.putStrLn . show) return result
     where
       appid = "lothar.com/wormhole/text-or-file-xfer"
