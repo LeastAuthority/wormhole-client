@@ -262,8 +262,7 @@ sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
   -- format sz as a fixed 4 byte bytestring
   let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
-  _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
-  res <- try $ sendBuffer ep record :: IO (Either IOError Int)
+  res <- try $ sendBuffer ep (toS payloadSize <> record) :: IO (Either IOError Int)
   case res of
     Left e -> return $ Left (ConnectionError (show e))
     Right x -> return $ Right x
