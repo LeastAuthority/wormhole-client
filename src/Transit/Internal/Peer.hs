@@ -35,7 +35,7 @@ import qualified Data.Set as Set
 
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
-import Data.ByteString.Builder(toLazyByteString, word32BE)
+import Data.ByteString.Builder(toLazyByteString, word32BE, byteString)
 import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
@@ -261,9 +261,10 @@ sendRecord :: TCPEndpoint -> ByteString -> IO (Either CommunicationError Int)
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
   -- format sz as a fixed 4 byte bytestring
-  let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
-  _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
-  res <- try $ sendBuffer ep record :: IO (Either IOError Int)
+  let payloadSize = word32BE (fromIntegral (BS.length record))
+      payload = byteString record
+      packet = payloadSize <> payload
+  res <- try $ sendBuffer ep (BL.toStrict (toLazyByteString packet)) :: IO (Either IOError Int)
   case res of
     Left e -> return $ Left (ConnectionError (show e))
     Right x -> return $ Right x
