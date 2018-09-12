@@ -2,15 +2,20 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Transit.Internal.Network
-  ( allocateTcpPort
-  , buildDirectHints
+  (
+    -- * build direct hints from port number and the interfaces on the host.
+    buildDirectHints
+    -- * low level bytestring buffer send/receive over a socket
   , sendBuffer
   , recvBuffer
+    -- * TCP Endpoint
   , closeConnection
   , TCPEndpoint(..)
-  , PortNumber
+    -- * TCP Listener that listens on a random port, Server and Client
+  , tcpListener
   , startServer
   , startClient
+    -- * Error
   , CommunicationError(..)
   ) where
 
@@ -22,7 +27,6 @@ import Network.Socket
   ( addrSocketType
   , PortNumber
   , addrFlags
-  , socketPort
   , addrAddress
   , addrProtocol
   , addrFamily
@@ -58,15 +62,15 @@ import System.Timeout
 import qualified Control.Exception as E
 import qualified Data.Text.IO as TIO
 
-allocateTcpPort :: IO PortNumber
-allocateTcpPort = E.bracket start close socketPort
-  where start = do
-          let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-          addr:_ <- getAddrInfo (Just hints') (Just "127.0.0.1") (Just (show defaultPort))
-          sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-          _ <- setSocketOption sock' ReuseAddr 1
-          _ <- bind sock' (addrAddress addr)
-          return sock'
+tcpListener :: IO Socket
+tcpListener = do
+  let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
+  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show defaultPort))
+  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  setSocketOption sock' ReuseAddr 1
+  bind sock' (addrAddress addr)
+  listen sock' 5
+  return sock'
 
 type Hostname = Text
 
@@ -132,14 +136,8 @@ recvBuffer ep = recv (sock ep)
 closeConnection :: TCPEndpoint -> IO ()
 closeConnection ep = close (sock ep)
 
-startServer :: PortNumber -> IO TCPEndpoint
-startServer portnum = do
-  let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show portnum))
-  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  _ <- setSocketOption sock' ReuseAddr 1
-  _ <- bind sock' (addrAddress addr)
-  listen sock' 5
+startServer :: Socket -> IO TCPEndpoint
+startServer sock' = do
   (conn, _) <- accept sock'
   close sock'
   return (TCPEndpoint conn)
