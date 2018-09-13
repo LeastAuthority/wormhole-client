@@ -45,10 +45,9 @@ sendPipeline fp (TransitEndpoint (TCPEndpoint s _) key _) =
 receivePipeline :: C.MonadResource m =>
                    FilePath
                 -> Int
-                -> TCPEndpoint
-                -> SecretBox.Key
+                -> TransitEndpoint
                 -> C.ConduitM a c m (Text, ())
-receivePipeline fp len (TCPEndpoint s _) key =
+receivePipeline fp len (TransitEndpoint (TCPEndpoint s _) key _) =
     CN.sourceSocket s
     .| assembleRecordC
     .| decryptC key
