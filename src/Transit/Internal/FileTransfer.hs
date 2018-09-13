@@ -76,8 +76,8 @@ sendGoodAckMessage ep key sha256Sum = do
       return $ bimap GeneralError (const ()) res
     Left e -> return $ Left (CipherError e)
 
-receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Error Text)
-receiveAckMessage ep key = do
+receiveAckMessage :: TransitEndpoint -> IO (Either Error Text)
+receiveAckMessage (TransitEndpoint ep _ key) = do
   ackBytes <- (fmap . fmap) BL.fromStrict (receiveRecord ep key)
   case ackBytes of
     Left e -> return $ Left (CipherError e)
@@ -95,55 +95,28 @@ receiveAckMessage ep key = do
 -- acknowledgement, which the sender can verify.
 sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> FilePath -> IO (Either Error ())
 sendFile conn transitserver appid filepath = do
-  -- exchange abilities
-  sock' <- tcpListener
-  portnum <- socketPort sock'
-  side <- generateTransitSide
-  withAsync (startServer sock') $ \asyncServer -> do
-    ourHints <- buildHints portnum transitserver
-    let ourRelayHints = buildRelayHints transitserver
-    transitResp <- senderTransitExchange conn (Set.toList ourHints)
-    case transitResp of
-      Left s -> return $ Left (GeneralError s)
-      Right (Transit _peerAbilities peerHints) -> do
-        -- send offer for the file
-        offerResp <- senderFileOfferExchange conn filepath
-        case offerResp of
-          Left s -> return (Left (GeneralError (OfferError s)))
-          Right _ -> do
-            -- combine our relay hints with peer's direct and relay hints
-            let allHints = Set.toList $ ourRelayHints <> peerHints
-            withAsync (startClient allHints) $ \asyncClient -> do
-              ep <- waitAny [asyncServer, asyncClient]
-              let endpoint' = snd ep
-              case endpoint' of
-                Left e -> return (Left (GeneralError e))
-                Right endpoint -> do
-                  -- 0. derive transit key
-                  let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                  -- 1. create record keys
-                      recordKeys = makeRecordKeys transitKey
-                  case recordKeys of
-                    Left e -> return (Left (CipherError e))
-                    Right (sRecordKey, rRecordKey) -> do
-                      -- 2. handshakeExchange
-                      handshake <- senderHandshakeExchange endpoint transitKey side
-                      case handshake of
-                        Left e -> return (Left (HandshakeError e))
-                        Right _ -> do
-                          -- 3. send encrypted chunks of N bytes to the peer
-                          (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath endpoint sRecordKey)
-                          -- 4. read a record that should contain the transit Ack.
-                          --    If ack is not ok or the sha256sum is incorrect, flag an error.
-                          rxAckMsg <- receiveAckMessage endpoint rRecordKey
-                          closeConnection endpoint
-                          case rxAckMsg of
-                            Right rxSha256Hash ->
-                              if (txSha256Hash /= rxSha256Hash)
-                              then return $ Left (GeneralError (Sha256SumError "sha256 mismatch"))
-                              else return (Right ())
-                            Left e -> return $ Left e
-      Right _ -> return $ Left (GeneralError (ConnectionError "error sending transit message"))
+  -- establish a transit connection
+  endpoint <- establishSenderTransit conn transitserver appid
+  case endpoint of
+    Left e -> return $ Left e
+    Right ep -> do
+      -- send offer for the file
+      offerResp <- senderFileOfferExchange conn filepath
+      case offerResp of
+        Left s -> return (Left (GeneralError (OfferError s)))
+        Right _ -> do
+          -- 3. send encrypted chunks of N bytes to the peer
+          (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath ep)
+          -- 4. read a record that should contain the transit Ack.
+          --    If ack is not ok or the sha256sum is incorrect, flag an error.
+          rxAckMsg <- receiveAckMessage ep
+          closeConnection ep
+          case rxAckMsg of
+            Right rxSha256Hash ->
+              if (txSha256Hash /= rxSha256Hash)
+              then return $ Left (GeneralError (Sha256SumError "sha256 mismatch"))
+              else return (Right ())
+            Left e -> return $ Left e
 
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error ())
 receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
@@ -193,7 +166,7 @@ receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
                       TIO.putStrLn (show rxSha256Sum)
                       _ <- sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
                       -- close the connection
-                      Right <$> closeConnection endpoint
+                      Right <$> closeConnection (TransitEndpoint endpoint sRecordKey rRecordKey)
       Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Could not decode message"))
 receiveFile _ _ _ _ = return $ Left (GeneralError (UnknownPeerMessage "Could not recognize the message"))
 
