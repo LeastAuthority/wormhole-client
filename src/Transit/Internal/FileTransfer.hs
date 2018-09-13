@@ -121,10 +121,10 @@ sendFile conn transitserver appid filepath = do
                   -- 0. derive transit key
                   let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
                   -- 1. create record keys
-                      maybeRecordKeys = makeRecordKeys transitKey
-                  case maybeRecordKeys of
-                    Nothing -> return (Left (GeneralError (TransitError "could not create record keys")))
-                    Just (sRecordKey, rRecordKey) -> do
+                      recordKeys = makeRecordKeys transitKey
+                  case recordKeys of
+                    Left e -> return (Left (CipherError e))
+                    Right (sRecordKey, rRecordKey) -> do
                       -- 2. handshakeExchange
                       handshake <- senderHandshakeExchange endpoint transitKey side
                       case handshake of
@@ -143,7 +143,6 @@ sendFile conn transitserver appid filepath = do
                               else return (Right ())
                             Left e -> return $ Left e
       Right _ -> return $ Left (GeneralError (ConnectionError "error sending transit message"))
-
 
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error ())
 receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
@@ -182,10 +181,10 @@ receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
                   -- 2. create sender/receiver record key, sender record key
                   --    for decrypting incoming records, receiver record key
                   --    for sending the file_ack back at the end.
-                  let maybeRecordKeys = makeRecordKeys transitKey
-                  case maybeRecordKeys of
-                    Nothing -> return $ Left (GeneralError (TransitError "could not create record keys"))
-                    Just (sRecordKey, rRecordKey) -> do
+                  let recordKeys = makeRecordKeys transitKey
+                  case recordKeys of
+                    Left e -> return $ Left (CipherError e)
+                    Right (sRecordKey, rRecordKey) -> do
                       -- 3. receive and decrypt records (length followed by length
                       --    sized packets). Also keep track of decrypted size in
                       --    order to know when to send the file ack at the end.
