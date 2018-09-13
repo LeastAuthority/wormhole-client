@@ -15,6 +15,7 @@ module Transit.Internal.Network
     -- * TCP Endpoint
   , closeConnection
   , TCPEndpoint(..)
+  , TransitEndpoint(..)
     -- * TCP Listener that listens on a random port, Server and Client
   , tcpListener
   , startServer
@@ -64,6 +65,7 @@ import System.Timeout (timeout)
 import Data.Text (splitOn)
 import Data.String (String)
 import System.IO.Error (IOError)
+import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
@@ -153,6 +155,14 @@ data TCPEndpoint
     , conntype :: Maybe AbilityV1
     } deriving (Show, Eq)
 
+data TransitEndpoint
+  = TransitEndpoint
+    { peerEndpoint :: TCPEndpoint
+    , senderKey :: SecretBox.Key
+    , receiverKey :: SecretBox.Key
+    } deriving (Eq)
+
+
 tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
 tryToConnect ability h@(Hint _ _ host portnum) =
   timeout 1000000 (bracketOnError
@@ -209,3 +219,4 @@ startClient hs = do
     go hint (dhs, rhs) = case hint of
                            Direct h -> (h:dhs, rhs)
                            Relay _ hs' -> (dhs, hs' <> rhs)
+

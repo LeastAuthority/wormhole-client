@@ -31,7 +31,8 @@ import Transit.Internal.Network
   , closeConnection
   , RelayEndpoint
   , CommunicationError(..)
-  , TCPEndpoint)
+  , TCPEndpoint
+  , TransitEndpoint(..))
 
 import Transit.Internal.Peer
   ( makeRecordKeys
@@ -196,3 +197,38 @@ receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
       Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Could not decode message"))
 receiveFile _ _ _ _ = return $ Left (GeneralError (UnknownPeerMessage "Could not recognize the message"))
 
+establishSenderTransit :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> IO (Either Error TransitEndpoint)
+establishSenderTransit conn transitserver appid = do
+  -- exchange abilities
+  sock' <- tcpListener
+  portnum <- socketPort sock'
+  side <- generateTransitSide
+  ourHints <- buildHints portnum transitserver
+  let ourRelayHints = buildRelayHints transitserver
+  transitResp <- senderTransitExchange conn (Set.toList ourHints)
+  case transitResp of
+    Left s -> return $ Left (GeneralError s)
+    Right (Transit _peerAbilities peerHints) -> do
+      -- combine our relay hints with peer's direct and relay hints
+      let allHints = Set.toList $ ourRelayHints <> peerHints
+      -- concurrently start client and server
+      transitEndpoint <- race (startServer sock') (startClient allHints)
+      let ep = either identity identity transitEndpoint
+      case ep of
+        Left e -> return (Left (GeneralError e))
+        Right endpoint -> do
+          -- 0. derive transit key
+          let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+              -- 1. create record keys
+              recordKeys = makeRecordKeys transitKey
+          case recordKeys of
+            Left e -> return (Left (CipherError e))
+            Right (sRecordKey, rRecordKey) -> do
+              -- 2. handshakeExchange
+              handshake <- senderHandshakeExchange endpoint transitKey side
+              -- if handshakeExchange is successful, return the TCPEndpoint
+              -- as, we now have a "secure" socket to communicate.
+              case handshake of
+                Left e -> return (Left (HandshakeError e))
+                Right _ -> return $ Right (TransitEndpoint endpoint sRecordKey rRecordKey)
+    Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Could not decode message"))
