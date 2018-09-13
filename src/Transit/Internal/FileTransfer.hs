@@ -122,10 +122,10 @@ sendFile conn transitserver appid filepath = do
                   -- 0. derive transit key
                   let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
                   -- 1. create record keys
-                      maybeRecordKeys = makeRecordKeys transitKey
-                  case maybeRecordKeys of
-                    Nothing -> return (Left (NetworkError (TransitError "could not create record keys")))
-                    Just (sRecordKey, rRecordKey) -> do
+                      recordKeys = makeRecordKeys transitKey
+                  case recordKeys of
+                    Left e -> return (Left (CipherError e))
+                    Right (sRecordKey, rRecordKey) -> do
                       -- 2. handshakeExchange
                       handshake <- senderHandshakeExchange endpoint transitKey side
                       case handshake of
@@ -144,7 +144,6 @@ sendFile conn transitserver appid filepath = do
                               else return (Right ())
                             Left e -> return $ Left e
       Right _ -> return $ Left (NetworkError (ConnectionError "error sending transit message"))
-
 
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error ())
 receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
@@ -183,10 +182,10 @@ receiveFile conn transitserver appid (Transit _peerAbilities peerHints) = do
                   -- 2. create sender/receiver record key, sender record key
                   --    for decrypting incoming records, receiver record key
                   --    for sending the file_ack back at the end.
-                  let maybeRecordKeys = makeRecordKeys transitKey
-                  case maybeRecordKeys of
-                    Nothing -> return $ Left (NetworkError (TransitError "could not create record keys"))
-                    Just (sRecordKey, rRecordKey) -> do
+                  let recordKeys = makeRecordKeys transitKey
+                  case recordKeys of
+                    Left e -> return $ Left (CipherError e)
+                    Right (sRecordKey, rRecordKey) -> do
                       -- 3. receive and decrypt records (length followed by length
                       --    sized packets). Also keep track of decrypted size in
                       --    order to know when to send the file ack at the end.
@@ -208,7 +207,7 @@ establishSenderTransit conn transitserver appid = do
   let ourRelayHints = buildRelayHints transitserver
   transitResp <- senderTransitExchange conn (Set.toList ourHints)
   case transitResp of
-    Left s -> return $ Left (GeneralError s)
+    Left s -> return $ Left (NetworkError s)
     Right (Transit _peerAbilities peerHints) -> do
       -- combine our relay hints with peer's direct and relay hints
       let allHints = Set.toList $ ourRelayHints <> peerHints
@@ -216,7 +215,7 @@ establishSenderTransit conn transitserver appid = do
       transitEndpoint <- race (startServer sock') (startClient allHints)
       let ep = either identity identity transitEndpoint
       case ep of
-        Left e -> return (Left (GeneralError e))
+        Left e -> return (Left (NetworkError e))
         Right endpoint -> do
           -- 0. derive transit key
           let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
@@ -232,4 +231,4 @@ establishSenderTransit conn transitserver appid = do
               case handshake of
                 Left e -> return (Left (HandshakeError e))
                 Right _ -> return $ Right (TransitEndpoint endpoint sRecordKey rRecordKey)
-    Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Could not decode message"))
+    Right _ -> return $ Left (NetworkError (UnknownPeerMessage "Could not decode message"))
