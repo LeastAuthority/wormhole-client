@@ -189,8 +189,8 @@ sendBuffer ep = send (sock ep)
 recvBuffer :: TCPEndpoint -> Int -> IO ByteString
 recvBuffer ep = recv (sock ep)
 
-closeConnection :: TCPEndpoint -> IO ()
-closeConnection ep = close (sock ep)
+closeConnection :: TransitEndpoint -> IO ()
+closeConnection ep = close (sock (peerEndpoint ep))
 
 startServer :: Socket -> IO (Either CommunicationError TCPEndpoint)
 startServer sock' = do
