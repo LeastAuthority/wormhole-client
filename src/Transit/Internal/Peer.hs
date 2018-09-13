@@ -285,5 +285,3 @@ generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
   randomBytes <- getRandomBytes 8
   pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
-
-
