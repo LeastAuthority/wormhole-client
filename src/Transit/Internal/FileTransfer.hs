@@ -34,8 +34,7 @@ import Transit.Internal.Network
   , TCPEndpoint)
 
 import Transit.Internal.Peer
-  ( makeSenderRecordKey
-  , makeReceiverRecordKey
+  ( makeRecordKeys
   , senderHandshakeExchange
   , senderTransitExchange
   , senderFileOfferExchange
@@ -122,8 +121,7 @@ sendFile conn transitserver appid filepath = do
                   -- 0. derive transit key
                   let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
                   -- 1. create record keys
-                      maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
-                                        <*> makeReceiverRecordKey transitKey
+                      maybeRecordKeys = makeRecordKeys transitKey
                   case maybeRecordKeys of
                     Nothing -> return (Left (NetworkError (TransitError "could not create record keys")))
                     Just (sRecordKey, rRecordKey) -> do
@@ -184,8 +182,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
                   -- 2. create sender/receiver record key, sender record key
                   --    for decrypting incoming records, receiver record key
                   --    for sending the file_ack back at the end.
-                  let maybeRecordKeys = (,) <$> makeSenderRecordKey transitKey
-                                        <*> makeReceiverRecordKey transitKey
+                  let maybeRecordKeys = makeRecordKeys transitKey
                   case maybeRecordKeys of
                     Nothing -> return $ Left (NetworkError (TransitError "could not create record keys"))
                     Just (sRecordKey, rRecordKey) -> do

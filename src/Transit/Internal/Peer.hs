@@ -2,8 +2,7 @@
 module Transit.Internal.Peer
   ( makeSenderHandshake
   , makeReceiverHandshake
-  , makeSenderRecordKey
-  , makeReceiverRecordKey
+  , makeRecordKeys
   , makeRelayHandshake
   , senderTransitExchange
   , senderFileOfferExchange
@@ -93,13 +92,14 @@ makeRelayHandshake key (MagicWormhole.Side side) =
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
-makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
-makeSenderRecordKey key =
-  Saltine.decode (deriveKeyFromPurpose SenderRecord key)
-
-makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
-makeReceiverRecordKey key =
-  Saltine.decode (deriveKeyFromPurpose ReceiverRecord key)
+makeRecordKeys :: SecretBox.Key -> Maybe (SecretBox.Key, SecretBox.Key)
+makeRecordKeys key = (,) <$> makeSenderRecordKey key
+                     <*> makeReceiverRecordKey key
+  where
+    makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
+    makeSenderRecordKey = Saltine.decode . (deriveKeyFromPurpose SenderRecord)
+    makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
+    makeReceiverRecordKey = Saltine.decode . (deriveKeyFromPurpose ReceiverRecord)
 
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
@@ -284,4 +284,5 @@ generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
   randomBytes <- getRandomBytes 8
   pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
+
 
