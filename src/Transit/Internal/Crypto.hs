@@ -1,8 +1,8 @@
 module Transit.Internal.Crypto
   ( encrypt
   , decrypt
-  , PlainText
-  , CipherText
+  , PlainText(..)
+  , CipherText(..)
   , deriveKeyFromPurpose
   , Purpose(..)
   , CryptoError(..)
@@ -19,8 +19,8 @@ import qualified Crypto.KDF.HKDF as HKDF
 import Crypto.Hash (SHA256(..))
 import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 
-type PlainText = ByteString
-type CipherText = ByteString
+newtype PlainText = PlainText ByteString
+newtype CipherText = CipherText ByteString
 
 data CryptoError
   = BadNonce Text
@@ -33,7 +33,7 @@ instance Exception CryptoError
 -- the given key. It is assumed that the ciphertext bytestring
 -- is nonce followed by the actual encrypted data.
 decrypt :: SecretBox.Key -> CipherText -> Either CryptoError (PlainText, SecretBox.Nonce)
-decrypt key ciphertext =
+decrypt key (CipherText ciphertext) =
   -- extract nonce from ciphertext.
   let (nonceBytes, record) = BS.splitAt boxNonce ciphertext
       maybeResult = Saltine.decode nonceBytes >>=
@@ -41,7 +41,7 @@ decrypt key ciphertext =
                     \plaintext -> return (plaintext, nonce)
   in
     case maybeResult of
-      Just (plaintext, nonce) -> Right (plaintext, nonce)
+      Just (plaintext, nonce) -> Right (PlainText plaintext, nonce)
       Nothing -> Left (CouldNotDecrypt "SecretBox failed to open")
 
 -- | encrypt the given chunk with the given secretbox key and nonce.
@@ -49,13 +49,13 @@ decrypt key ciphertext =
 -- However, to interop with the wormhole python client, we need to
 -- use and send nonce as a little endian bytestring.
 encrypt :: SecretBox.Key -> SecretBox.Nonce -> PlainText -> Either CryptoError CipherText
-encrypt key nonce plaintext =
+encrypt key nonce (PlainText plaintext) =
   let nonceLE = BS.reverse $ toS $ Saltine.encode nonce
       maybeResult = Saltine.decode (toS nonceLE) >>=
                     \newNonce -> Just (toS (SecretBox.secretbox key newNonce plaintext))
   in
     case maybeResult of
-      Just ciphertext -> Right (nonceLE <> ciphertext)
+      Just ciphertext -> Right (CipherText (nonceLE <> ciphertext))
       Nothing -> Left (BadNonce "encrypt: could not decode nonce")
 
 hkdf :: ByteString -> SecretBox.Key -> ByteString -> ByteString

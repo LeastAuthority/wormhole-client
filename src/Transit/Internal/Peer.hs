@@ -5,11 +5,16 @@ module Transit.Internal.Peer
   , makeSenderRecordKey
   , makeReceiverRecordKey
   , makeSenderRelayHandshake
-  , transitExchange
-  , senderOfferExchange
+  , senderTransitExchange
+  , senderFileOfferExchange
+  , sendOffer
+  , receiveOffer
+  , sendMessageAck
+  , receiveMessageAck
   , senderHandshakeExchange
   , receiverHandshakeExchange
   , sendTransitMsg
+  , decodeTransitMsg
   , sendGoodAckMessage
   , receiveAckMessage
   , receiveWormholeMessage
@@ -46,12 +51,15 @@ import Transit.Internal.Network
   , buildDirectHints
   , closeConnection
   , sendBuffer
-  , recvBuffer)
+  , recvBuffer
+  , CommunicationError(..))
 import Transit.Internal.Crypto
   ( encrypt,
     decrypt,
     deriveKeyFromPurpose,
-    Purpose(..))
+    Purpose(..),
+    PlainText(..),
+    CipherText(..))
 
 import qualified MagicWormhole
 
@@ -90,8 +98,8 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-transitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-transitExchange conn portnum = do
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
+senderTransitExchange conn portnum = do
   let abilities' = [Ability DirectTcpV1]
   hints' <- buildDirectHints portnum
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
@@ -103,7 +111,7 @@ transitExchange conn portnum = do
   where
     receiveTransitMsg = do
       -- receive the transit from the receiving side
-      MagicWormhole.PlainText responseMsg <- atomically $ MagicWormhole.receiveMessage conn
+      responseMsg <- receiveWormholeMessage conn
       return responseMsg
 
 sendTransitMsg :: MagicWormhole.EncryptedConnection -> [Ability] -> [ConnectionHint] -> IO ()
@@ -111,14 +119,47 @@ sendTransitMsg conn abilities' hints' = do
   -- create transit message
   let txTransitMsg = Transit abilities' hints'
   let encodedTransitMsg = toS (encode txTransitMsg)
-
   -- send the transit message (dictionary with key as "transit" and value as abilities)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
+decodeTransitMsg :: ByteString -> Either CommunicationError TransitMsg
+decodeTransitMsg received =
+  case eitherDecode (toS received) of
+    Right transitMsg -> Right transitMsg
+    Left err -> Left $ TransitError (toS err)
 
-senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
-senderOfferExchange conn path = do
-  (_,rx) <- concurrently sendOffer receiveResponse
+sendOffer :: MagicWormhole.EncryptedConnection -> MagicWormhole.Offer -> IO ()
+sendOffer conn offer =
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode offer)))
+
+-- | receive a message over wormhole and try to decode it as an offer message.
+-- If it is not an offer message, pass the raw bytestring as a Left value.
+receiveOffer :: MagicWormhole.EncryptedConnection -> IO (Either ByteString MagicWormhole.Offer)
+receiveOffer conn = do
+  received <- receiveWormholeMessage conn
+  case eitherDecode (toS received) of
+    Right msg@(MagicWormhole.Message _) -> return $ Right msg
+    Right file@(MagicWormhole.File _ _) -> return $ Right file
+    Right dir@(MagicWormhole.Directory _ _ _ _ _) -> return $ Right dir
+    Left _ -> return $ Left received
+
+receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO ()
+receiveMessageAck conn = do
+  rxTransitMsg <- receiveWormholeMessage conn
+  case eitherDecode (toS rxTransitMsg) of
+    Left s -> throwIO (TransitError (show s))
+    Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
+                                     | otherwise -> throwIO (TransitError "Message ack failed")
+    Right s -> throwIO (TransitError (show s))
+
+sendMessageAck :: MagicWormhole.EncryptedConnection -> Text -> IO ()
+sendMessageAck conn msg = do
+  let ackMessage = Answer (MessageAck msg)
+  MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode ackMessage)))
+
+senderFileOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
+senderFileOfferExchange conn path = do
+  (_,rx) <- concurrently sendFileOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
     Left s -> return $ Left (toS s)
@@ -128,14 +169,14 @@ senderOfferExchange conn path = do
     Right (Answer (MessageAck _)) -> return $ Left "expected file ack, got message ack instead"
     Right (Transit _ _) -> return $ Left "unexpected transit message"
   where
-    sendOffer :: IO ()
-    sendOffer = do
+    sendFileOffer :: IO ()
+    sendFileOffer = do
       size <- getFileSize path
       let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
-      MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode fileOffer)))
+      sendOffer conn fileOffer
     receiveResponse :: IO ByteString
     receiveResponse = do
-      MagicWormhole.PlainText rxFileOffer <- atomically $ MagicWormhole.receiveMessage conn
+      rxFileOffer <- receiveWormholeMessage conn
       return rxFileOffer
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
@@ -194,10 +235,10 @@ receiveAckMessage ep key = do
 sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
 sendGoodAckMessage ep key sha256Sum = do
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-      maybeEncMsg = encrypt key Saltine.zero (BL.toStrict (encode transitAckMsg))
+      maybeEncMsg = encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
     in
     case maybeEncMsg of
-      Right encMsg -> sendRecord ep encMsg >> return ()
+      Right (CipherText encMsg) -> sendRecord ep encMsg >> return ()
       Left e -> throwIO e
 
 sendRecord :: TCPEndpoint -> ByteString -> IO Int
@@ -216,5 +257,7 @@ receiveRecord ep key = do
     lenBytes <- recvBuffer ep 4
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
-    either throwIO (return . fst) (decrypt key encRecord)
+    case decrypt key (CipherText encRecord) of
+      Left e -> throwIO e
+      Right (PlainText pt, _) -> return pt
 
