@@ -52,14 +52,10 @@ import Network.Info
   , NetworkInterface(..)
   , IPv4(..)
   )
-import Network.Socket.ByteString
-  ( send
-  , recv
-  )
-import System.Timeout
-  ( timeout
-  )
-import qualified Control.Exception as E
+
+import Network.Socket.ByteString (send, recv)
+import System.Timeout (timeout)
+
 import qualified Data.Text.IO as TIO
 
 tcpListener :: IO Socket
@@ -104,28 +100,24 @@ data TCPEndpoint
     { sock :: Socket
     } deriving (Show, Eq)
 
-tryToConnect :: Ability -> ConnectionHint -> IO (Maybe TCPEndpoint)
-tryToConnect (Ability DirectTcpV1) (Direct (Hint DirectTcpV1 _ host portnum)) =
-  withSocketsDo $ do
-  addr <- resolve (toS host) (show portnum)
-  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-  timeout 10000000 (testAddress sock' $ addrAddress addr)
+tryToConnect :: Hint -> IO (Maybe TCPEndpoint)
+tryToConnect h@(Hint _ _ host portnum) =
+  timeout 1000000 (bracketOnError
+                    (init host portnum)
+                    (\(sock', _) -> close sock')
+                    (\(sock', addr) -> do
+                        connect sock' $ addrAddress addr
+                        return (TCPEndpoint sock')))
   where
+    init host' port' = withSocketsDo $ do
+      TIO.putStrLn $ "trying to connect to " <> (show h)
+      addr <- resolve (toS host') (show port')
+      sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+      return (sock', addr)
     resolve host' port' = do
       let hints' = defaultHints { addrSocketType = Stream }
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
-    testAddress so addr = do
-      result <- try $ connect so addr
-      case result of
-        Left (e :: E.SomeException) -> throwIO e
-        Right _ -> return (TCPEndpoint so)
-tryToConnect (Ability DirectTcpV1) _ = do
-  TIO.putStrLn "Tor hints and Relays are not supported yet"
-  return Nothing
-tryToConnect (Ability RelayV1) _ = do
-  TIO.putStrLn "Relays are not supported yet"
-  return Nothing
 
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
 sendBuffer ep = send (sock ep)
@@ -144,17 +136,33 @@ startServer sock' = do
 
 data CommunicationError
   = ConnectionError Text
+  -- ^ We could not establish a socket connection.
   | OfferError Text
+  -- ^ Clients could not exchange offer message.
   | TransitError Text
+  -- ^ There was an error in transit protocol exchanges.
   | Sha256SumError Text
+  -- ^ Sender got back a wrong sha256sum from the receiver.
   | UnknownPeerMessage Text
+  -- ^ We could not identify the message from peer.
   deriving (Eq, Show)
 
 instance Exception CommunicationError
 
-startClient :: [Ability] -> [ConnectionHint] -> IO TCPEndpoint
-startClient as hs = do
-  maybeClientEndPoint <- asum (map (tryToConnect (Ability DirectTcpV1)) hs)
-  case maybeClientEndPoint of
+startClient :: [ConnectionHint] -> IO TCPEndpoint
+startClient hs = do
+  let sortedHs = sort hs
+      (dHs, rHs) = segregateHints sortedHs
+  (ep1, ep2) <- concurrently (asum (map tryToConnect dHs)) (asum (map tryToConnect rHs))
+  let maybeEndPoint = asum [ep1, ep2]
+  case maybeEndPoint of
     Just ep -> return ep
     Nothing -> throwIO (ConnectionError "Peer socket is not active")
+  where
+    -- (a -> b -> b) -> b -> [a] -> b
+    segregateHints :: [ConnectionHint] -> ([Hint], [Hint])
+    segregateHints = foldr go ([],[])
+    go :: ConnectionHint -> ([Hint], [Hint]) -> ([Hint], [Hint])
+    go hint (dhs, rhs) = case hint of
+                           Direct h -> (h:dhs, rhs)
+                           Relay _ hs' -> (dhs, hs' <> rhs)

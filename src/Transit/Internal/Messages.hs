@@ -45,6 +45,9 @@ data Hint = Hint { ctype :: AbilityV1
                  , port :: Word16 }
           deriving (Eq, Show, Generic)
 
+instance Ord Hint where
+  Hint _ p1 _ _ `compare` Hint _ p2 _ _ = Down p1 `compare` Down p2
+
 instance ToJSON Hint where
   toJSON = genericToJSON
     defaultOptions { fieldLabelModifier =
@@ -64,6 +67,12 @@ data ConnectionHint
   | Relay { rtype :: AbilityV1
           , hints :: [Hint] }
   deriving (Eq, Show, Generic)
+
+instance Ord ConnectionHint where
+  Direct _  `compare` Direct _  = EQ
+  Direct _  `compare` Relay _ _ = LT
+  Relay _ h1 `compare` Relay _ h2 = h1 `compare` h2
+  Relay _ _ `compare` Direct _  = GT
 
 instance ToJSON ConnectionHint where
   toJSON = genericToJSON
