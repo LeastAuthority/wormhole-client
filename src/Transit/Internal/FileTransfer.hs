@@ -205,3 +205,32 @@ establishSenderTransit conn transitserver appid = do
                 Left e -> return (Left (HandshakeError e))
                 Right _ -> return $ Right (TransitEndpoint endpoint sRecordKey rRecordKey)
     Right _ -> return $ Left (NetworkError (UnknownPeerMessage "Could not decode message"))
+
+establishReceiverTransit :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error TransitEndpoint)
+establishReceiverTransit conn transitserver appid (Transit _peerAbilities peerHints) = do
+  s <- tcpListener
+  let ourRelayHints = buildRelayHints transitserver
+  side <- generateTransitSide
+  -- combine our relay hints with peer's direct and relay hints
+  let allHints = Set.toList (peerHints <> ourRelayHints)
+  -- derive transit key
+  let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+  transitEndpoint <- race (startServer s) (startClient allHints)
+  let ep = either identity identity transitEndpoint
+  case ep of
+    Left e -> return (Left (NetworkError e))
+    Right endpoint -> do
+      -- create sender/receiver record key, sender record key
+      --    for decrypting incoming records, receiver record key
+      --    for sending the file_ack back at the end.
+      let recordKeys = makeRecordKeys transitKey
+      case recordKeys of
+        Left e -> return $ Left (CipherError e)
+        Right (sRecordKey, rRecordKey) -> do
+          -- handshakeExchange
+          handshake <- receiverHandshakeExchange endpoint transitKey side
+          case handshake of
+            Left e -> return (Left (HandshakeError e))
+            Right _ -> return $ Right (TransitEndpoint endpoint sRecordKey rRecordKey)
+establishReceiverTransit _ _ _ _ = return $ Left (NetworkError (UnknownPeerMessage "Could not recognize the message"))
+
