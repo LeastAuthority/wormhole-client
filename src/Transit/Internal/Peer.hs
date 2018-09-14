@@ -5,7 +5,7 @@ module Transit.Internal.Peer
   , makeRecordKeys
   , makeRelayHandshake
   , senderTransitExchange
-  , senderFileOfferExchange
+  , senderOfferExchange
   , sendOffer
   , receiveOffer
   , sendMessageAck
@@ -24,7 +24,7 @@ module Transit.Internal.Peer
   )
 where
 
-import Protolude
+import Protolude hiding ((<.>))
 
 import qualified Control.Exception as E
 import qualified Crypto.Saltine.Class as Saltine
@@ -39,11 +39,13 @@ import Data.ByteString.Builder(toLazyByteString, word32BE, byteString)
 import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
-import System.PosixCompat.Files (getFileStatus, fileSize)
-import System.FilePath (takeFileName)
+import System.PosixCompat.Files (getFileStatus, fileSize, isDirectory)
+import System.FilePath (takeFileName, takeBaseName, dropTrailingPathSeparator, (<.>), (</>))
 import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
+import System.Directory.PathWalk (pathWalk)
+import Codec.Archive.Zip (createArchive, CompressionMethod ( Deflate ), mkEntrySelector, packDirRecur)
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -164,29 +166,41 @@ sendMessageAck conn msg = do
   let ackMessage = Answer (MessageAck msg)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode ackMessage)))
 
-senderFileOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text ())
-senderFileOfferExchange conn path = do
-  (_,rx) <- concurrently sendFileOffer receiveResponse
+senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text FilePath)
+senderOfferExchange conn path = do
+  (filePath, rx) <- concurrently sendFileOrDirOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
     Left s -> return $ Left (toS s)
     Right (Error errstr) -> return $ Left (toS errstr)
-    Right (Answer (FileAck msg)) | msg == "ok" -> return (Right ())
+    Right (Answer (FileAck msg)) | msg == "ok" -> return (Right filePath)
                                  | otherwise -> return $ Left "Did not get file ack. Exiting"
     Right (Answer (MessageAck _)) -> return $ Left "expected file ack, got message ack instead"
     Right (Transit _ _) -> return $ Left "unexpected transit message"
   where
-    sendFileOffer :: IO ()
-    sendFileOffer = do
-      size <- getFileSize path
-      let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
-      sendOffer conn fileOffer
+    sendFileOrDirOffer :: IO FilePath
+    sendFileOrDirOffer = do
+      isDir <- isDirectory <$> getFileStatus path
+      if isDir
+        then sendDirOffer
+        else sendFileOffer
     receiveResponse :: IO ByteString
     receiveResponse = do
       rxFileOffer <- receiveWormholeMessage conn
       return rxFileOffer
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
+    sendFileOffer = do
+      size <- getFileSize path
+      let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
+      sendOffer conn fileOffer
+      return path
+    sendDirOffer = do
+      (zipFilePath, (totalFiles, totalSize)) <- zipDir path
+      size <- getFileSize zipFilePath
+      let dirOffer = MagicWormhole.Directory MagicWormhole.ZipFileDeflated (toS (takeBaseName (dropTrailingPathSeparator path))) (fromIntegral size) (fromIntegral totalSize) (fromIntegral totalFiles)
+      sendOffer conn dirOffer
+      return zipFilePath
 
 receiveWormholeMessage :: MagicWormhole.EncryptedConnection -> IO ByteString
 receiveWormholeMessage conn = do
@@ -287,4 +301,30 @@ generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
   randomBytes <- getRandomBytes 8
   pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
+
+type DirState = (Int, FileOffset)
+
+-- | Given an input FilePath representing a directory, zip
+-- the entire directory contents and return the path to the
+-- zip file and a state (number of files and total size of all
+-- the files).
+zipDir :: FilePath -> IO (FilePath, DirState)
+zipDir filePath = do
+  let zipFileName = "/tmp" </> (takeBaseName (dropTrailingPathSeparator filePath)) <.> "zip"
+  ((_, stats), _) <- concurrently
+                     (runStateT (dirStats filePath) (0,0))
+                     (createArchive zipFileName $
+                       packDirRecur Deflate mkEntrySelector filePath)
+  return (zipFileName, stats)
+
+dirStats :: FilePath -> StateT DirState IO ()
+dirStats filePath = do
+  pathWalk filePath $ \root dirs files -> do
+      forM_ files $ \file -> do
+        size <- liftIO (getFileSize (root </> file))
+        (numFiles, totalSize) <- get
+        put (numFiles + 1, totalSize + size)
+          where
+            getFileSize :: FilePath -> IO FileOffset
+            getFileSize file = fileSize <$> getFileStatus file
 
