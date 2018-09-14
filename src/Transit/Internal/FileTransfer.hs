@@ -10,7 +10,6 @@ where
 import Protolude
 
 import qualified Data.Aeson as Aeson
-import qualified Data.Text.IO as TIO
 import qualified Conduit as C
 import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as BL
@@ -202,13 +201,14 @@ receiveFile conn transitserver appid transit = do
       case endpoint of
         Left e -> return $ Left e
         Right ep -> do
-          -- receive and decrypt records (length followed by length
-          -- sized packets). Also keep track of decrypted size in
-          -- order to know when to send the file ack at the end.
-          (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) ep
-          TIO.putStrLn (show rxSha256Sum)
-          _ <- sendAckMessage ep (toS rxSha256Sum)
-          -- close the connection
-          Right <$> closeConnection ep
+          _ <- finally
+               (do
+                   -- receive and decrypt records (length followed by length
+                   -- sized packets). Also keep track of decrypted size in
+                   -- order to know when to send the file ack at the end.
+                   (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) ep
+                   sendAckMessage ep (toS rxSha256Sum))
+               (closeConnection ep)
+          return $ Right ()
     Right _ -> return $ Left (NetworkError (UnknownPeerMessage "Directory transfer unsupported"))
 
