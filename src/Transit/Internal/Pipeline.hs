@@ -79,7 +79,7 @@ decryptC key = loop Saltine.zero
       b <- C.await
       case b of
         Nothing -> return ()
-        Just bs -> do
+        Just bs ->
           case decrypt key (CipherText bs) of
             Right (PlainText plainText, nonce) -> do
               let seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum

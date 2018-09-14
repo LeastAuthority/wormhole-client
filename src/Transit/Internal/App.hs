@@ -187,11 +187,11 @@ receive session code = do
           Right (MagicWormhole.File _ _) -> do
             sendMessageAck conn "not_ok"
             return $ Left (GeneralError (ConnectionError "did not expect a file offer"))
-          Right (MagicWormhole.Directory _ _ _ _ _) ->
-            return $ Left (GeneralError (UnknownPeerMessage "directory offer is not supported"))
+          Right MagicWormhole.Directory {} ->
+            return $ Left (GeneralError (ConnectionError "did not expect a directory offer"))
           -- ok, we received the Transit Message, send back a transit message
           Left received ->
-            case (decodeTransitMsg (toS received)) of
+            case decodeTransitMsg (toS received) of
               Left e -> return $ Left (GeneralError e)
               Right transitMsg ->
                 receiveFile conn transitserver appid transitMsg
@@ -205,10 +205,10 @@ app = do
       endpoint = relayEndpoint options
   case cmd options of
     Send tfd ->
-      (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
+      liftIO (MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
           runApp (sendSession tfd session) env) >>= liftEither
     Receive maybeCode ->
-      (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
+      liftIO (MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
           runApp (receiveSession maybeCode session) env) >>= liftEither
   where
     getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
