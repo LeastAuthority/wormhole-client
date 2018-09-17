@@ -168,14 +168,15 @@ sendFile conn transitserver appid filepath = do
       case offerResp of
         Left s -> return (Left (GeneralError (OfferError s)))
         Right pathToSend -> do
-          (rxAckMsg, txSha256Hash) <- finally
-                                      (do -- send encrypted records to the peer
-                                          (txSha256Hash, _) <- C.runConduitRes (sendPipeline pathToSend ep)
-                                          -- read a record that should contain the transit Ack.
-                                          -- If ack is not ok or the sha256sum is incorrect, flag an error.
-                                          rxAckMsg <- receiveAckMessage ep
-                                          return (rxAckMsg, txSha256Hash))
-                                      (closeConnection ep)
+          (rxAckMsg, txSha256Hash) <-
+            finally
+            (do -- send encrypted records to the peer
+                (txSha256Hash, _) <- C.runConduitRes (sendPipeline pathToSend ep)
+                -- read a record that should contain the transit Ack.
+                -- If ack is not ok or the sha256sum is incorrect, flag an error.
+                rxAckMsg <- receiveAckMessage ep
+                return (rxAckMsg, txSha256Hash))
+            (closeConnection ep)
           case rxAckMsg of
             Right rxSha256Hash ->
               if txSha256Hash /= rxSha256Hash
