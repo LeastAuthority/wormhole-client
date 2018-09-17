@@ -5,6 +5,10 @@ module Transit.Internal.Network
   (
     -- * build direct hints from port number and the interfaces on the host.
     buildDirectHints
+    -- * parse and build transit relay hints
+  , parseTransitRelayUri
+  , buildRelayHints
+  , RelayEndpoint(..)
     -- * low level bytestring buffer send/receive over a socket
   , sendBuffer
   , recvBuffer
@@ -19,9 +23,10 @@ module Transit.Internal.Network
   , CommunicationError(..)
   ) where
 
+import Prelude (read)
 import Protolude
 
-import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..), Ability(..))
+import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..))
 
 import Network.Socket
   ( addrSocketType
@@ -55,6 +60,8 @@ import Network.Info
 
 import Network.Socket.ByteString (send, recv)
 import System.Timeout (timeout)
+import Data.Text (splitOn)
+import Data.String (String)
 
 import qualified Data.Text.IO as TIO
 
@@ -95,19 +102,43 @@ buildDirectHints portnum = do
                               , priority = 0
                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
+data RelayEndpoint
+  = RelayEndpoint
+  { relayhost :: Text
+  , relayport :: Word16
+  } deriving (Show, Eq)
+
+parseTransitRelayUri :: String -> Maybe RelayEndpoint
+parseTransitRelayUri url =
+  let parts = splitOn ":" (toS @String @Text url)
+      (Just host') = atMay parts 1
+      (Just port') = atMay parts 2
+  in
+    if length parts == 3 && "tcp:" `isPrefixOf` url
+    then Just (RelayEndpoint { relayhost = host', relayport = read @Word16 (toS port') })
+    else Nothing
+
+buildRelayHints :: RelayEndpoint -> [ConnectionHint]
+buildRelayHints (RelayEndpoint host' port') =
+  [Relay RelayV1 [Hint { hostname = host'
+                       , port = port'
+                       , priority = 0.0
+                       , ctype = RelayV1 }]]
+
 data TCPEndpoint
   = TCPEndpoint
     { sock :: Socket
+    , conntype :: Maybe AbilityV1
     } deriving (Show, Eq)
 
-tryToConnect :: Hint -> IO (Maybe TCPEndpoint)
-tryToConnect h@(Hint _ _ host portnum) =
+tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
+tryToConnect ability h@(Hint _ _ host portnum) =
   timeout 1000000 (bracketOnError
                     (init host portnum)
                     (\(sock', _) -> close sock')
                     (\(sock', addr) -> do
                         connect sock' $ addrAddress addr
-                        return (TCPEndpoint sock')))
+                        return (TCPEndpoint sock' (Just ability))))
   where
     init host' port' = withSocketsDo $ do
       TIO.putStrLn $ "trying to connect to " <> (show h)
@@ -132,7 +163,7 @@ startServer :: Socket -> IO TCPEndpoint
 startServer sock' = do
   (conn, _) <- accept sock'
   close sock'
-  return (TCPEndpoint conn)
+  return (TCPEndpoint conn Nothing)
 
 data CommunicationError
   = ConnectionError Text
@@ -153,8 +184,10 @@ startClient :: [ConnectionHint] -> IO TCPEndpoint
 startClient hs = do
   let sortedHs = sort hs
       (dHs, rHs) = segregateHints sortedHs
-  (ep1, ep2) <- concurrently (asum (map tryToConnect dHs)) (asum (map tryToConnect rHs))
-  let maybeEndPoint = asum [ep1, ep2]
+  (ep1, ep2) <- concurrently
+                (asum (map (tryToConnect DirectTcpV1) dHs))
+                (asum (map (tryToConnect RelayV1) rHs))
+  let maybeEndPoint = ep1 <|> ep2
   case maybeEndPoint of
     Just ep -> return ep
     Nothing -> throwIO (ConnectionError "Peer socket is not active")

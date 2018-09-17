@@ -4,7 +4,7 @@ module Transit.Internal.Peer
   , makeReceiverHandshake
   , makeSenderRecordKey
   , makeReceiverRecordKey
-  , makeSenderRelayHandshake
+  , makeRelayHandshake
   , senderTransitExchange
   , senderFileOfferExchange
   , sendOffer
@@ -19,6 +19,7 @@ module Transit.Internal.Peer
   , receiveAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
+  , generateTransitSide
   )
 where
 
@@ -27,17 +28,20 @@ import Protolude
 import qualified Control.Exception as E
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
+
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
-import qualified Data.ByteString as BS
 import Data.ByteString.Builder(toLazyByteString, word32BE)
-import qualified Data.ByteString.Lazy as BL
 import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.FilePath (takeFileName)
 import Network.Socket (PortNumber)
+import Crypto.Random (MonadRandom(..))
+import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -48,18 +52,19 @@ import Transit.Internal.Messages
   , ConnectionHint)
 import Transit.Internal.Network
   ( TCPEndpoint(..)
+  , RelayEndpoint(..)
   , buildDirectHints
-  , closeConnection
+  , buildRelayHints
   , sendBuffer
   , recvBuffer
   , CommunicationError(..))
 import Transit.Internal.Crypto
-  ( encrypt,
-    decrypt,
-    deriveKeyFromPurpose,
-    Purpose(..),
-    PlainText(..),
-    CipherText(..))
+  ( encrypt
+  , decrypt
+  , deriveKeyFromPurpose
+  , Purpose(..)
+  , PlainText(..)
+  , CipherText(..))
 
 import qualified MagicWormhole
 
@@ -77,13 +82,13 @@ makeReceiverHandshake key =
     subkey = deriveKeyFromPurpose ReceiverHandshake key
     hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
 
--- | create sender's relay handshake bytestring
+-- | create relay handshake bytestring
 -- "please relay HEXHEX for side XXXXX\n"
-makeSenderRelayHandshake :: SecretBox.Key -> MagicWormhole.Side -> ByteString
-makeSenderRelayHandshake key (MagicWormhole.Side side) =
+makeRelayHandshake :: SecretBox.Key -> MagicWormhole.Side -> ByteString
+makeRelayHandshake key (MagicWormhole.Side side) =
   (toS @Text @ByteString "please relay ") <> token <> (toS @Text @ByteString " for side ") <> sideBytes <> "\n"
   where
-    subkey = deriveKeyFromPurpose SenderRelayHandshake key
+    subkey = deriveKeyFromPurpose RelayHandshake key
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
@@ -98,11 +103,12 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-senderTransitExchange :: MagicWormhole.EncryptedConnection -> PortNumber -> IO (Either Text TransitMsg)
-senderTransitExchange conn portnum = do
-  let abilities' = [Ability DirectTcpV1]
-  hints' <- buildDirectHints portnum
-  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hints') receiveTransitMsg
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> PortNumber -> IO (Either Text TransitMsg)
+senderTransitExchange conn relayurl portnum = do
+  let abilities' = [Ability DirectTcpV1, Ability RelayV1]
+      relayHints = buildRelayHints relayurl
+  directHints <- buildDirectHints portnum
+  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' (directHints <> relayHints)) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
     Left s -> return (Left (toS s))
@@ -191,16 +197,32 @@ sendWormholeMessage conn msg =
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS msg))
 
 data InvalidHandshake = InvalidHandshake
+                      | InvalidRelayHandshake
   deriving (Show, Eq)
 
 instance E.Exception InvalidHandshake where
 
-senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
-senderHandshakeExchange ep key = do
+relayHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+relayHandshakeExchange ep key side = do
+  r <- sendRelayHandshake >> receiveAck
+  if r == "ok\n"
+    then return ()
+    else throwIO InvalidRelayHandshake
+  where
+    sendRelayHandshake = sendBuffer ep sHandshakeMsg
+    sHandshakeMsg = makeRelayHandshake key side
+    receiveAck = recvByteString (BS.length rHandshakeMsg)
+    rHandshakeMsg = "ok\n"
+    recvByteString n = recvBuffer ep n
+
+senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+senderHandshakeExchange ep key side = do
+  when (conntype ep == Just RelayV1) $ do
+    relayHandshakeExchange ep key side
   (_, r) <- concurrently sendHandshake rxHandshake
   if r == rHandshakeMsg
-      then sendGo >> return ()
-      else sendNeverMind >> closeConnection ep
+    then sendGo >> return ()
+    else sendNeverMind >> throwIO InvalidHandshake
   where
     sendHandshake = sendBuffer ep sHandshakeMsg
     rxHandshake = recvByteString (BS.length rHandshakeMsg)
@@ -210,8 +232,10 @@ senderHandshakeExchange ep key = do
     rHandshakeMsg = makeReceiverHandshake key
     recvByteString n = recvBuffer ep n
 
-receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> IO ()
-receiverHandshakeExchange ep key = do
+receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+receiverHandshakeExchange ep key side = do
+  when (conntype ep == Just RelayV1) $ do
+    relayHandshakeExchange ep key side
   (_, r') <- concurrently sendHandshake rxHandshake
   r'' <- recvByteString (BS.length "go\n")
   if (r' <> r'') == sHandshakeMsg <> "go\n"
@@ -260,4 +284,9 @@ receiveRecord ep key = do
     case decrypt key (CipherText encRecord) of
       Left e -> throwIO e
       Right (PlainText pt, _) -> return pt
+
+generateTransitSide :: MonadRandom m => m MagicWormhole.Side
+generateTransitSide = do
+  randomBytes <- getRandomBytes 8
+  pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
 

@@ -28,6 +28,8 @@ module Transit
   , Peer.sendMessageAck
   , Peer.decodeTransitMsg
   , Network.CommunicationError(..)
+  , Network.parseTransitRelayUri
+  , Network.RelayEndpoint(..)
   )
 where
 

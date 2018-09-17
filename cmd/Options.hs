@@ -23,12 +23,14 @@ import Protolude
 import qualified Options.Applicative as Opt
 
 import qualified MagicWormhole
+
 import Transit
 
 data Options
   = Options
   { cmd :: Command
   , relayEndpoint :: MagicWormhole.WebSocketEndpoint
+  , transitUrl :: Transit.RelayEndpoint
   } deriving (Eq, Show)
 
 data Command
@@ -46,11 +48,21 @@ optionsParser
       Opt.help "Endpoint for the Relay server" <>
       Opt.value defaultEndpoint <>
       Opt.showDefault )
+    <*> Opt.option
+    (Opt.maybeReader Transit.parseTransitRelayUri)
+    ( Opt.long "transit-helper" <>
+      Opt.help "Transit relay to use" <>
+      Opt.value defaultTransitUrl <>
+      Opt.showDefault )
   where
     -- | Default URL for relay server.
     --
     -- This is a relay server run by Brian Warner.
     defaultEndpoint = fromMaybe (panic "Invalid default URL") (MagicWormhole.parseWebSocketEndpoint "ws://relay.magic-wormhole.io:4000/v1")
+    -- | Default Transit Relay Url
+    --
+    -- This is a Transit relay run by Brian Warner.
+    defaultTransitUrl = fromMaybe (panic "Invalid transit relay URL") (Transit.parseTransitRelayUri "tcp:transit.magic-wormhole.io:4001")
 
 commandParser :: Opt.Parser Command
 commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
