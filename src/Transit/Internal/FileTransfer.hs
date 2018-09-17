@@ -15,6 +15,8 @@ import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as BL
 
 import Network.Socket (socketPort, Socket)
+import System.FilePath ((</>))
+import System.Directory (removeFile)
 
 import qualified MagicWormhole
 
@@ -43,7 +45,8 @@ import Transit.Internal.Peer
   , makeGoodAckMessage
   , generateTransitSide
   , sendRecord
-  , receiveRecord)
+  , receiveRecord
+  , unzipInto)
 
 import Transit.Internal.Messages
   ( TransitMsg( Transit, Answer )
@@ -121,14 +124,14 @@ establishSenderTransit conn transitserver appid = do
     Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Could not decode message"))
 
 establishReceiverTransit :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> Socket -> IO (Either Error TransitEndpoint)
-establishReceiverTransit conn transitserver appid (Transit _peerAbilities peerHints) s = do
+establishReceiverTransit conn transitserver appid (Transit _peerAbilities peerHints) socket = do
   let ourRelayHints = buildRelayHints transitserver
   side <- generateTransitSide
   -- combine our relay hints with peer's direct and relay hints
   let allHints = Set.toList (peerHints <> ourRelayHints)
   -- derive transit key
   let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-  transitEndpoint <- race (startServer s) (startClient allHints)
+  transitEndpoint <- race (startServer socket) (startClient allHints)
   let ep = either identity identity transitEndpoint
   case ep of
     Left e -> return (Left (GeneralError e))
@@ -191,23 +194,32 @@ receiveFile conn transitserver appid transit = do
   offerMsg <- receiveWormholeMessage conn
   case Aeson.eitherDecode (toS offerMsg) of
     Left err -> return $ Left (GeneralError (OfferError $ "unable to decode offer msg: " <> toS err))
-    Right (MagicWormhole.File name size) -> do
-      -- TODO: if the file already exist in the current dir, abort
-      -- send an answer message with file_ack.
-      let ans = Answer (FileAck "ok")
-      sendWormholeMessage conn (Aeson.encode ans)
-      -- establish receive transit endpoint
-      endpoint <- establishReceiverTransit conn transitserver appid transit s
-      case endpoint of
-        Left e -> return $ Left e
-        Right ep -> do
-          _ <- finally
-               (do
-                   -- receive and decrypt records (length followed by length
-                   -- sized packets). Also keep track of decrypted size in
-                   -- order to know when to send the file ack at the end.
-                   (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) ep
-                   sendGoodAckMessage ep (toS rxSha256Sum))
-               (closeConnection ep)
-          return $ Right ()
-    Right _ -> return $ Left (GeneralError (UnknownPeerMessage "Directory transfer unsupported"))
+    Right (MagicWormhole.File name size) -> rxFile s name size
+    Right (MagicWormhole.Directory _mode name zipSize _ _uncompressedSize) -> do
+      let zipFile = "/tmp" </> (toS name)
+      _ <- rxFile s zipFile zipSize
+      -- TODO: check if the file system containing the current directory has
+      -- enough space, by checking the uncompressedSize and the free space.
+      _ <- unzipInto (toS name) zipFile
+      Right <$> removeFile zipFile
+    Right _ -> return $ Left (GeneralError (UnknownPeerMessage "cannot decipher the message from peer"))
+    where
+      rxFile socket name size = do
+        -- TODO: if the file already exist in the current dir, abort.
+        -- send an answer message with file_ack.
+        let ans = Answer (FileAck "ok")
+        sendWormholeMessage conn (Aeson.encode ans)
+        -- establish receive transit endpoint
+        endpoint <- establishReceiverTransit conn transitserver appid transit socket
+        case endpoint of
+          Left e -> return $ Left e
+          Right ep -> do
+            _ <- finally
+                 (do
+                     -- receive and decrypt records (length followed by length
+                     -- sized packets). Also keep track of decrypted size in
+                     -- order to know when to send the file ack at the end.
+                     (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) ep
+                     sendGoodAckMessage ep (toS rxSha256Sum))
+                 (closeConnection ep)
+            return $ Right ()

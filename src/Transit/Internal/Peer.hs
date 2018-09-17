@@ -21,6 +21,7 @@ module Transit.Internal.Peer
   , InvalidHandshake(..)
   , sendRecord
   , receiveRecord
+  , unzipInto
   )
 where
 
@@ -45,7 +46,7 @@ import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 import System.Directory.PathWalk (pathWalk)
-import Codec.Archive.Zip (createArchive, CompressionMethod ( Deflate ), mkEntrySelector, packDirRecur)
+import Codec.Archive.Zip (createArchive, withArchive, CompressionMethod ( Deflate ), mkEntrySelector, packDirRecur, unpackInto)
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -317,7 +318,7 @@ zipDir filePath = do
 
 dirStats :: FilePath -> StateT DirState IO ()
 dirStats filePath = do
-  pathWalk filePath $ \root dirs files -> do
+  pathWalk filePath $ \root _dirs files -> do
       forM_ files $ \file -> do
         size <- liftIO (getFileSize (root </> file))
         (numFiles, totalSize) <- get
@@ -326,3 +327,7 @@ dirStats filePath = do
             getFileSize :: FilePath -> IO FileOffset
             getFileSize file = fileSize <$> getFileStatus file
 
+-- | unzip the given zip file into the especified directory
+-- under current working directory
+unzipInto :: FilePath -> FilePath -> IO ()
+unzipInto dirname zipFilePath = withArchive zipFilePath (unpackInto dirname)

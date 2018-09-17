@@ -42,6 +42,7 @@ library
                      , conduit-extra
                      , containers
                      , cryptonite
+                     , directory
                      , filepath
                      , haskeline
                      , hex
