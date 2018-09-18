@@ -46,7 +46,7 @@ import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 import System.Directory.PathWalk (pathWalk)
-import Codec.Archive.Zip (createArchive, withArchive, CompressionMethod ( Deflate ), mkEntrySelector, packDirRecur, unpackInto)
+import Codec.Archive.Zip (addFilesToArchive, ZipOption ( OptRecursive, OptDestination ), emptyArchive, toArchive, fromArchive, extractFilesFromArchive)
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -312,8 +312,9 @@ zipDir filePath = do
   let zipFileName = "/tmp" </> (takeBaseName (dropTrailingPathSeparator filePath)) <.> "zip"
   ((_, stats), _) <- concurrently
                      (runStateT (dirStats filePath) (0,0))
-                     (createArchive zipFileName $
-                       packDirRecur Deflate mkEntrySelector filePath)
+                     (do
+                         zipArchive <- addFilesToArchive [OptRecursive] emptyArchive [filePath]
+                         BL.writeFile zipFileName (fromArchive zipArchive))
   return (zipFileName, stats)
 
 dirStats :: FilePath -> StateT DirState IO ()
@@ -330,4 +331,6 @@ dirStats filePath = do
 -- | unzip the given zip file into the especified directory
 -- under current working directory
 unzipInto :: FilePath -> FilePath -> IO ()
-unzipInto dirname zipFilePath = withArchive zipFilePath (unpackInto dirname)
+unzipInto dirname zipFilePath = do
+  bs <- BL.readFile zipFilePath
+  extractFilesFromArchive [OptDestination dirname] (toArchive bs)
