@@ -30,6 +30,7 @@ import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
+import qualified Data.Set as Set
 
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
@@ -52,9 +53,6 @@ import Transit.Internal.Messages
   , ConnectionHint)
 import Transit.Internal.Network
   ( TCPEndpoint(..)
-  , RelayEndpoint(..)
-  , buildDirectHints
-  , buildRelayHints
   , sendBuffer
   , recvBuffer
   , CommunicationError(..))
@@ -103,12 +101,10 @@ makeReceiverRecordKey key =
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-senderTransitExchange :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> PortNumber -> IO (Either Text TransitMsg)
-senderTransitExchange conn relayurl portnum = do
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either Text TransitMsg)
+senderTransitExchange conn hs = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
-      relayHints = buildRelayHints relayurl
-  directHints <- buildDirectHints portnum
-  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' (directHints <> relayHints)) receiveTransitMsg
+  (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hs) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
     Left s -> return (Left (toS s))
@@ -123,7 +119,7 @@ senderTransitExchange conn relayurl portnum = do
 sendTransitMsg :: MagicWormhole.EncryptedConnection -> [Ability] -> [ConnectionHint] -> IO ()
 sendTransitMsg conn abilities' hints' = do
   -- create transit message
-  let txTransitMsg = Transit abilities' hints'
+  let txTransitMsg = Transit abilities' (Set.fromList hints')
   let encodedTransitMsg = toS (encode txTransitMsg)
   -- send the transit message (dictionary with key as "transit" and value as abilities)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
