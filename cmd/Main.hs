@@ -162,16 +162,16 @@ receive session transitserver appid code = do
           Right (MagicWormhole.Message message) -> do
             TIO.putStrLn message
             result <- try (Transit.sendMessageAck conn "ok") :: IO (Either IOError ())
-            return $ bimap (const (Transit.GeneralError (Transit.ConnectionError "sending the ack message failed"))) identity result
+            return $ bimap (const (Transit.NetworkError (Transit.ConnectionError "sending the ack message failed"))) identity result
           Right (MagicWormhole.File _ _) -> do
             Transit.sendMessageAck conn "not_ok"
-            return $ Left (Transit.GeneralError (Transit.ConnectionError "did not expect a file offer"))
+            return $ Left (Transit.NetworkError (Transit.ConnectionError "did not expect a file offer"))
           Right (MagicWormhole.Directory _ _ _ _ _) ->
-            return $ Left (Transit.GeneralError (Transit.UnknownPeerMessage "directory offer is not supported"))
+            return $ Left (Transit.NetworkError (Transit.UnknownPeerMessage "directory offer is not supported"))
           -- ok, we received the Transit Message, send back a transit message
           Left received ->
             case (Transit.decodeTransitMsg (toS received)) of
-              Left e -> return $ Left (Transit.GeneralError e)
+              Left e -> return $ Left (Transit.NetworkError e)
               Right transitMsg ->
                 Transit.receiveFile conn transitserver appid transitMsg
     )
