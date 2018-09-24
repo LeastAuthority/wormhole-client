@@ -36,17 +36,26 @@ import qualified Data.Set as Set
 
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
+import Data.Bits (shiftL)
 import Data.ByteString.Builder(toLazyByteString, word32BE)
 import Data.Hex (hex)
 import Data.Text (toLower)
-import System.Posix.Types (FileOffset)
-import System.PosixCompat.Files (getFileStatus, fileSize, isDirectory)
+import System.Posix.Types (FileOffset, FileMode)
+import System.PosixCompat.Files (getFileStatus, fileSize, fileMode, isDirectory)
 import System.FilePath (takeFileName, takeBaseName, dropTrailingPathSeparator, (<.>), (</>))
 import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 import System.Directory.PathWalk (pathWalk)
-import Codec.Archive.Zip (createArchive, withArchive, CompressionMethod ( Deflate ), mkEntrySelector, packDirRecur, unpackInto)
+import Codec.Archive.Zip ( createArchive
+                         , withArchive
+                         , CompressionMethod ( Deflate )
+                         , mkEntrySelector
+                         , unEntrySelector
+                         , packDirRecur
+                         , unpackInto
+                         , forEntries
+                         , setExternalFileAttrs)
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -309,12 +318,21 @@ type DirState = (Int, FileOffset)
 -- the files).
 zipDir :: FilePath -> IO (FilePath, DirState)
 zipDir filePath = do
-  let zipFileName = "/tmp" </> (takeBaseName (dropTrailingPathSeparator filePath)) <.> "zip"
+  let dirName = takeBaseName (dropTrailingPathSeparator filePath)
+  let zipFileName = "/tmp" </> dirName <.> "zip"
   ((_, stats), _) <- concurrently
                      (runStateT (dirStats filePath) (0,0))
-                     (createArchive zipFileName $
-                       packDirRecur Deflate mkEntrySelector filePath)
+                     (do
+                         createArchive zipFileName $
+                           packDirRecur Deflate mkEntrySelector filePath
+                         withArchive zipFileName $ do
+                           forEntries $ \selector -> do
+                             mode <- liftIO $ getFileMode (dirName </> unEntrySelector selector)
+                             setExternalFileAttrs (fromIntegral (mode `shiftL` 16)) selector)
   return (zipFileName, stats)
+    where
+      getFileMode :: FilePath -> IO FileMode
+      getFileMode file = fileMode <$> getFileStatus file
 
 dirStats :: FilePath -> StateT DirState IO ()
 dirStats filePath = do
