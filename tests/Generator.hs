@@ -7,12 +7,17 @@ module Generator
   , ackGen
   , transitMsgGen
   , transitAckGen
+  , nonceBytesGen
+  , purposeGen
   )
 where
 
 import Protolude
 
 import Hedgehog (MonadGen(..))
+import qualified Crypto.Saltine.Class as Saltine
+import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import Crypto.Saltine.Internal.ByteSizes (boxNonce)
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
@@ -25,6 +30,7 @@ import Transit.Internal.Messages
   , TransitMsg(..)
   , TransitAck(..)
   )
+import qualified Transit.Internal.Crypto as C
 
 abilityGen :: MonadGen m => m Ability
 abilityGen = Ability <$> abilityV1Gen
@@ -66,3 +72,13 @@ transitAckGen :: MonadGen m => m TransitAck
 transitAckGen = TransitAck
   <$> Gen.text (Range.linear 0 5) Gen.unicode
   <*> Gen.text (Range.singleton 64) Gen.hexit
+
+nonceBytesGen :: MonadGen m => m ByteString
+nonceBytesGen = Gen.bytes (Range.singleton boxNonce)
+
+purposeGen :: MonadGen m => m C.Purpose
+purposeGen = Gen.choice [ pure C.SenderHandshake
+                        , pure C.ReceiverHandshake
+                        , pure C.SenderRecord
+                        , pure C.ReceiverRecord
+                        , pure C.RelayHandshake ]
