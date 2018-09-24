@@ -19,7 +19,7 @@ module Transit.Internal.Network
   , tcpListener
   , startServer
   , startClient
-  -- * Errors
+    -- * Errors
   , CommunicationError(..)
   ) where
 
