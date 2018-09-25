@@ -40,7 +40,7 @@ jobs:
           command: |
              cabal update
              cabal install alex happy
-             cabal install cabal-install
+             cabal install cabal-install-2.2.0.0
 
       - save_cache:
           key: buildtools
