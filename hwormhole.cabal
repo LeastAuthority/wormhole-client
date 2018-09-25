@@ -100,5 +100,6 @@ test-suite hwormhole-tests
   other-modules:      ProtocolTests
                     , MessagesTests
                     , PipelineTests
+                    , CryptoTests
                     , Generator
   default-language:   Haskell2010

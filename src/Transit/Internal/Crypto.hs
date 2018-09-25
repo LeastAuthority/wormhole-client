@@ -20,7 +20,10 @@ import Crypto.Hash (SHA256(..))
 import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 
 newtype PlainText = PlainText ByteString
+  deriving (Eq, Show)
+
 newtype CipherText = CipherText ByteString
+  deriving (Eq)
 
 data CryptoError
   = BadNonce Text

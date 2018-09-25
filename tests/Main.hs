@@ -5,10 +5,13 @@ import Protolude
 import qualified ProtocolTests
 import qualified MessagesTests
 import qualified PipelineTests
+import qualified CryptoTests
 
 main :: IO ()
 main = do
   ProtocolTests.tests
   MessagesTests.tests
   PipelineTests.tests
-  MessagesTests.messagesRoundTripTests >> return ()
+  MessagesTests.messagesRoundTripTests >>
+    CryptoTests.cryptoRoundTripTests >>
+    return ()
