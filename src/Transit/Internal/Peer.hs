@@ -15,7 +15,7 @@ module Transit.Internal.Peer
   , receiverHandshakeExchange
   , sendTransitMsg
   , decodeTransitMsg
-  , makeGoodAckMessage
+  , makeAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
   , generateTransitSide
@@ -251,8 +251,8 @@ receiverHandshakeExchange ep key side = do
         rHandshakeMsg = makeReceiverHandshake key
         recvByteString n = recvBuffer ep n
     
-makeGoodAckMessage :: SecretBox.Key -> ByteString -> Either CryptoError CipherText
-makeGoodAckMessage key sha256Sum =
+makeAckMessage :: SecretBox.Key -> ByteString -> Either CryptoError CipherText
+makeAckMessage key sha256Sum =
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
   in
     encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))

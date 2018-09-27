@@ -43,7 +43,7 @@ import Transit.Internal.Peer
   , sendTransitMsg
   , sendWormholeMessage
   , receiverHandshakeExchange
-  , makeGoodAckMessage
+  , makeAckMessage
   , generateTransitSide
   , sendRecord
   , receiveRecord)
@@ -67,10 +67,10 @@ data MessageType
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
 
-sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO (Either Error ())
-sendGoodAckMessage ep key sha256Sum = do
-  let goodAckMessage = makeGoodAckMessage key sha256Sum
-  case goodAckMessage of
+sendAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO (Either Error ())
+sendAckMessage ep key sha256Sum = do
+  let ackMessage = makeAckMessage key sha256Sum
+  case ackMessage of
     Right (CipherText encMsg) -> do
       res <- sendRecord ep encMsg
       return $ bimap NetworkError (const ()) res
@@ -194,7 +194,7 @@ receiveFile conn transitserver appid (Transit peerAbilities peerHints) = do
                       --    order to know when to send the file ack at the end.
                       (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) endpoint sRecordKey
                       TIO.putStrLn (show rxSha256Sum)
-                      _ <- sendGoodAckMessage endpoint rRecordKey (toS rxSha256Sum)
+                      _ <- sendAckMessage endpoint rRecordKey (toS rxSha256Sum)
                       -- close the connection
                       Right <$> closeConnection endpoint
       Right _ -> return $ Left (NetworkError (UnknownPeerMessage "Could not decode message"))
