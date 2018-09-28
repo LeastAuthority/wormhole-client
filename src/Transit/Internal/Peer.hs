@@ -2,8 +2,7 @@
 module Transit.Internal.Peer
   ( makeSenderHandshake
   , makeReceiverHandshake
-  , makeSenderRecordKey
-  , makeReceiverRecordKey
+  , makeRecordKeys
   , makeRelayHandshake
   , senderTransitExchange
   , senderFileOfferExchange
@@ -15,11 +14,13 @@ module Transit.Internal.Peer
   , receiverHandshakeExchange
   , sendTransitMsg
   , decodeTransitMsg
-  , sendGoodAckMessage
-  , receiveAckMessage
+  , makeAckMessage
   , receiveWormholeMessage
   , sendWormholeMessage
   , generateTransitSide
+  , InvalidHandshake(..)
+  , sendRecord
+  , receiveRecord
   )
 where
 
@@ -34,15 +35,15 @@ import qualified Data.Set as Set
 
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
-import Data.ByteString.Builder(toLazyByteString, word32BE)
+import Data.ByteString.Builder(toLazyByteString, word32BE, byteString)
 import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset)
 import System.PosixCompat.Files (getFileStatus, fileSize)
 import System.FilePath (takeFileName)
-import Network.Socket (PortNumber)
 import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
+import System.IO.Error (IOError)
 
 import Transit.Internal.Messages
   ( TransitMsg(..)
@@ -62,7 +63,8 @@ import Transit.Internal.Crypto
   , deriveKeyFromPurpose
   , Purpose(..)
   , PlainText(..)
-  , CipherText(..))
+  , CipherText(..)
+  , CryptoError(..))
 
 import qualified MagicWormhole
 
@@ -90,26 +92,27 @@ makeRelayHandshake key (MagicWormhole.Side side) =
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
-makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
-makeSenderRecordKey key =
-  Saltine.decode (deriveKeyFromPurpose SenderRecord key)
-
-makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
-makeReceiverRecordKey key =
-  Saltine.decode (deriveKeyFromPurpose ReceiverRecord key)
+makeRecordKeys :: SecretBox.Key -> Maybe (SecretBox.Key, SecretBox.Key)
+makeRecordKeys key = (,) <$> makeSenderRecordKey key
+                     <*> makeReceiverRecordKey key
+  where
+    makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
+    makeSenderRecordKey = Saltine.decode . (deriveKeyFromPurpose SenderRecord)
+    makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
+    makeReceiverRecordKey = Saltine.decode . (deriveKeyFromPurpose ReceiverRecord)
 
 -- |'transitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
-senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either Text TransitMsg)
+senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either CommunicationError TransitMsg)
 senderTransitExchange conn hs = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hs) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
-    Left s -> return (Left (toS s))
-    Right (Error errstr) -> return (Left errstr)
-    Right (Answer _) -> return (Left "Answer message from the peer is unexpected")
+    Left s -> return (Left (TransitError (toS s)))
+    Right (Error errstr) -> return (Left (TransitError errstr))
+    Right (Answer _) -> return (Left (TransitError "Answer message from the peer is unexpected"))
   where
     receiveTransitMsg = do
       -- receive the transit from the receiving side
@@ -145,14 +148,14 @@ receiveOffer conn = do
     Right dir@(MagicWormhole.Directory _ _ _ _ _) -> return $ Right dir
     Left _ -> return $ Left received
 
-receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO ()
+receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO (Either CommunicationError ())
 receiveMessageAck conn = do
   rxTransitMsg <- receiveWormholeMessage conn
   case eitherDecode (toS rxTransitMsg) of
-    Left s -> throwIO (TransitError (show s))
-    Right (Answer (MessageAck msg')) | msg' == "ok" -> return ()
-                                     | otherwise -> throwIO (TransitError "Message ack failed")
-    Right s -> throwIO (TransitError (show s))
+    Left s -> return $ Left (TransitError (show s))
+    Right (Answer (MessageAck msg')) | msg' == "ok" -> return $ Right ()
+                                     | otherwise -> return $ Left (TransitError "Message ack failed")
+    Right s -> return $ Left (TransitError (show s))
 
 sendMessageAck :: MagicWormhole.EncryptedConnection -> Text -> IO ()
 sendMessageAck conn msg = do
@@ -211,14 +214,18 @@ relayHandshakeExchange ep key side = do
     rHandshakeMsg = "ok\n"
     recvByteString n = recvBuffer ep n
 
-senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 senderHandshakeExchange ep key side = do
   when (conntype ep == Just RelayV1) $ do
     relayHandshakeExchange ep key side
   (_, r) <- concurrently sendHandshake rxHandshake
   if r == rHandshakeMsg
-    then sendGo >> return ()
-    else sendNeverMind >> throwIO InvalidHandshake
+    then do
+    _ <- sendGo
+    return $ Right ()
+    else do
+    _ <- sendNeverMind
+    return $ Left InvalidHandshake
   where
     sendHandshake = sendBuffer ep sHandshakeMsg
     rxHandshake = recvByteString (BS.length rHandshakeMsg)
@@ -228,15 +235,15 @@ senderHandshakeExchange ep key side = do
     rHandshakeMsg = makeReceiverHandshake key
     recvByteString n = recvBuffer ep n
 
-receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
+receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 receiverHandshakeExchange ep key side = do
   when (conntype ep == Just RelayV1) $ do
     relayHandshakeExchange ep key side
   (_, r') <- concurrently sendHandshake rxHandshake
   r'' <- recvByteString (BS.length "go\n")
   if (r' <> r'') == sHandshakeMsg <> "go\n"
-    then return ()
-    else throwIO InvalidHandshake
+    then return $ Right ()
+    else return $ Left InvalidHandshake
     where
         sendHandshake = sendBuffer ep rHandshakeMsg
         rxHandshake = recvByteString (BS.length sHandshakeMsg)
@@ -244,32 +251,25 @@ receiverHandshakeExchange ep key side = do
         rHandshakeMsg = makeReceiverHandshake key
         recvByteString n = recvBuffer ep n
     
-receiveAckMessage :: TCPEndpoint -> SecretBox.Key -> IO (Either Text Text)
-receiveAckMessage ep key = do
-  ackBytes <- BL.fromStrict <$> receiveRecord ep key
-  case eitherDecode ackBytes of
-    Right (TransitAck msg checksum) | msg == "ok" -> return (Right checksum)
-                                    | otherwise -> return (Left "transit ack failure")
-    Left s -> return (Left $ toS ("transit ack failure: " <> s))
-
-sendGoodAckMessage :: TCPEndpoint -> SecretBox.Key -> ByteString -> IO ()
-sendGoodAckMessage ep key sha256Sum = do
+makeAckMessage :: SecretBox.Key -> ByteString -> Either CryptoError CipherText
+makeAckMessage key sha256Sum =
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
-      maybeEncMsg = encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
-    in
-    case maybeEncMsg of
-      Right (CipherText encMsg) -> sendRecord ep encMsg >> return ()
-      Left e -> throwIO e
+  in
+    encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
 
-sendRecord :: TCPEndpoint -> ByteString -> IO Int
+sendRecord :: TCPEndpoint -> ByteString -> IO (Either CommunicationError Int)
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
   -- format sz as a fixed 4 byte bytestring
-  let payloadSize = toLazyByteString (word32BE (fromIntegral (BS.length record)))
-  _ <- sendBuffer ep (toS payloadSize) `catch` \e -> throwIO (e :: E.SomeException)
-  sendBuffer ep record `catch` \e -> throwIO (e :: E.SomeException)
+  let payloadSize = word32BE (fromIntegral (BS.length record))
+      payload = byteString record
+      packet = payloadSize <> payload
+  res <- try $ sendBuffer ep (BL.toStrict (toLazyByteString packet)) :: IO (Either IOError Int)
+  case res of
+    Left e -> return $ Left (ConnectionError (show e))
+    Right x -> return $ Right x
 
-receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO ByteString
+receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO (Either CryptoError ByteString)
 receiveRecord ep key = do
   -- read 4 bytes that consists of length
   -- read as much bytes specified by the length. That would be encrypted record
@@ -278,11 +278,12 @@ receiveRecord ep key = do
     let len = runGet getWord32be (BL.fromStrict lenBytes)
     encRecord <- recvBuffer ep (fromIntegral len)
     case decrypt key (CipherText encRecord) of
-      Left e -> throwIO e
-      Right (PlainText pt, _) -> return pt
+      Left e -> return $ Left e
+      Right (PlainText plaintext, _) -> return $ Right plaintext
 
 generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
   randomBytes <- getRandomBytes 8
   pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
+
 

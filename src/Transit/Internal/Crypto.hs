@@ -11,6 +11,7 @@ where
 
 import Protolude
 
+import qualified Control.Exception as E
 import qualified Data.ByteString as BS
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
@@ -25,12 +26,13 @@ newtype PlainText = PlainText ByteString
 newtype CipherText = CipherText ByteString
   deriving (Eq)
 
-data CryptoError
-  = BadNonce Text
-  | CouldNotDecrypt Text
-  deriving (Eq, Show)
+data CryptoError = BadNonce Text
+                 -- ^ The nonce value in the received message is invalid.
+                 | CouldNotDecrypt Text
+                 -- ^ We could not decrypt the incoming encrypted record.
+                 deriving (Eq, Show)
 
-instance Exception CryptoError
+instance E.Exception CryptoError
 
 -- | decrypt the bytestring representing ciphertext block with
 -- the given key. It is assumed that the ciphertext bytestring

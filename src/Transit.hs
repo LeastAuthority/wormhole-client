@@ -27,12 +27,15 @@ module Transit
   , Peer.receiveMessageAck
   , Peer.sendMessageAck
   , Peer.decodeTransitMsg
-  , Network.CommunicationError(..)
+  , Errors.Error(..)
+  , Errors.liftEitherCommError
   , Network.parseTransitRelayUri
   , Network.RelayEndpoint(..)
+  , Network.CommunicationError(..)
   )
 where
 
 import qualified Transit.Internal.FileTransfer as FileTransfer
 import qualified Transit.Internal.Peer as Peer
 import qualified Transit.Internal.Network as Network
+import qualified Transit.Internal.Errors as Errors

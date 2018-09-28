@@ -1,0 +1,24 @@
+module Transit.Internal.Errors
+  ( liftEitherCommError
+    -- * Error
+  , Error(..)
+  )
+where
+
+import Protolude
+
+import qualified Control.Exception as E
+
+import qualified Transit.Internal.Network as N
+import qualified Transit.Internal.Crypto as C
+import qualified Transit.Internal.Peer as P
+
+data Error = CipherError C.CryptoError
+           | NetworkError N.CommunicationError
+           | HandshakeError P.InvalidHandshake
+           deriving (Show)
+
+instance E.Exception Error
+
+liftEitherCommError :: Either N.CommunicationError a -> Either Error a
+liftEitherCommError = first NetworkError

@@ -20,7 +20,6 @@ module Main where
 
 import Protolude
 
-import Data.String (String)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO
 import qualified System.Console.Haskeline as H
@@ -28,6 +27,9 @@ import qualified System.Console.Haskeline.Completion as HC
 import System.Random (randomR, getStdGen)
 import qualified Options.Applicative as Opt
 import qualified Crypto.Spake2 as Spake2
+
+import Data.String (String)
+import System.IO.Error (IOError)
 
 import qualified MagicWormhole
 import qualified Transit
@@ -118,7 +120,7 @@ type Password = ByteString
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO ()
+send :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Password -> Transit.MessageType -> IO (Either Transit.Error ())
 send session transitserver appid password tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
@@ -134,12 +136,13 @@ send session transitserver appid password tfd = do
             let offer = MagicWormhole.Message msg
             Transit.sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
-            Transit.receiveMessageAck conn
-          Transit.TFile filepath -> Transit.sendFile conn transitserver appid filepath
+            Transit.liftEitherCommError <$> Transit.receiveMessageAck conn
+          Transit.TFile filepath ->
+            Transit.sendFile conn transitserver appid filepath
     )
 
 -- | receive a text message or file from the wormhole peer.
-receive :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Text -> IO ()
+receive :: MagicWormhole.Session -> Transit.RelayEndpoint -> MagicWormhole.AppID -> Text -> IO (Either Transit.Error ())
 receive session transitserver appid code = do
   -- establish the connection
   let codeSplit = Text.split (=='-') code
@@ -154,20 +157,21 @@ receive session transitserver appid code = do
         -- and then offer comes in. `Transit.receiveOffer' will attempt to interpret
         -- the bytestring as an offer message. If that fails, it passes the raw bytestring
         -- as a Left value so that we can try to decode it as a TransitMsg.
-        maybeOffer <- Transit.receiveOffer conn
-        case maybeOffer of
+        someOffer <- Transit.receiveOffer conn
+        case someOffer of
           Right (MagicWormhole.Message message) -> do
-            Transit.sendMessageAck conn "ok"
             TIO.putStrLn message
+            result <- try (Transit.sendMessageAck conn "ok") :: IO (Either IOError ())
+            return $ bimap (const (Transit.NetworkError (Transit.ConnectionError "sending the ack message failed"))) identity result
           Right (MagicWormhole.File _ _) -> do
             Transit.sendMessageAck conn "not_ok"
-            throwIO (Transit.ConnectionError "did not expect a file offer")
+            return $ Left (Transit.NetworkError (Transit.ConnectionError "did not expect a file offer"))
           Right (MagicWormhole.Directory _ _ _ _ _) ->
-            throwIO (Transit.UnknownPeerMessage "directory offer is not supported")
+            return $ Left (Transit.NetworkError (Transit.UnknownPeerMessage "directory offer is not supported"))
           -- ok, we received the Transit Message, send back a transit message
           Left received ->
             case (Transit.decodeTransitMsg (toS received)) of
-              Left e -> throwIO e
+              Left e -> return $ Left (Transit.NetworkError e)
               Right transitMsg ->
                 Transit.receiveFile conn transitserver appid transitMsg
     )
@@ -182,10 +186,12 @@ main = do
   case cmd options of
     Send tfd -> MagicWormhole.runClient endpoint appID side $ \session -> do
       password <- allocatePassword wordList
-      send session transiturl appID (toS password) tfd
+      result <- send session transiturl appID (toS password) tfd
+      either (TIO.putStrLn . show) return result
     Receive maybeCode -> MagicWormhole.runClient endpoint appID side $ \session -> do
       code <- getWormholeCode session wordList maybeCode
-      receive session transiturl appID code
+      result <- receive session transiturl appID code
+      either (TIO.putStrLn . show) return result
     where
       appID = MagicWormhole.AppID "lothar.com/wormhole/text-or-file-xfer"
       getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
