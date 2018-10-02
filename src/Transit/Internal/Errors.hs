@@ -2,6 +2,9 @@ module Transit.Internal.Errors
   ( liftEitherCommError
     -- * Error
   , Error(..)
+  , N.CommunicationError(..)
+  , P.InvalidHandshake
+  , C.CryptoError
   )
 where
 

@@ -16,34 +16,23 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 
-module Options where
+module Options
+  ( commandlineParser
+  )
+where
 
 import Protolude
 
 import qualified Options.Applicative as Opt
 
-import qualified MagicWormhole
+import qualified Transit
 
-import Transit
-
-data Options
-  = Options
-  { cmd :: Command
-  , relayEndpoint :: MagicWormhole.WebSocketEndpoint
-  , transitUrl :: Transit.RelayEndpoint
-  } deriving (Eq, Show)
-
-data Command
-  = Send MessageType
-  | Receive (Maybe Text)
-  deriving (Eq, Show)
-
-optionsParser :: Opt.Parser Options
+optionsParser :: Opt.Parser Transit.Options
 optionsParser
-  = Options
+  = Transit.Options
     <$> commandParser
     <*> Opt.option
-    (Opt.maybeReader MagicWormhole.parseWebSocketEndpoint)
+    (Opt.maybeReader Transit.parseWebSocketEndpoint)
     ( Opt.long "relayserver-url" <>
       Opt.help "Endpoint for the Relay server" <>
       Opt.value defaultEndpoint <>
@@ -58,27 +47,30 @@ optionsParser
     -- | Default URL for relay server.
     --
     -- This is a relay server run by Brian Warner.
-    defaultEndpoint = fromMaybe (panic "Invalid default URL") (MagicWormhole.parseWebSocketEndpoint "ws://relay.magic-wormhole.io:4000/v1")
+    defaultEndpoint = fromMaybe (panic "Invalid default URL") (Transit.parseWebSocketEndpoint "ws://relay.magic-wormhole.io:4000/v1")
     -- | Default Transit Relay Url
     --
     -- This is a Transit relay run by Brian Warner.
     defaultTransitUrl = fromMaybe (panic "Invalid transit relay URL") (Transit.parseTransitRelayUri "tcp:transit.magic-wormhole.io:4001")
 
-commandParser :: Opt.Parser Command
+commandParser :: Opt.Parser Transit.Command
 commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
   where
     sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message, a file or a directory"))
     receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
-    receiveOptions :: Opt.Parser Command
-    receiveOptions = Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
-    sendOptions :: Opt.Parser Command
-    sendOptions = Send <$> parseMessageType
-    parseMessageType :: Opt.Parser MessageType
+    receiveOptions :: Opt.Parser Transit.Command
+    receiveOptions = Transit.Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
+    sendOptions :: Opt.Parser Transit.Command
+    sendOptions = Transit.Send <$> parseMessageType
+    parseMessageType :: Opt.Parser Transit.MessageType
     parseMessageType = msgParser <|> fileOrDirParser
-    msgParser :: Opt.Parser MessageType
-    msgParser = TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
-    fileOrDirParser :: Opt.Parser MessageType
-    fileOrDirParser = TFile <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
+    msgParser :: Opt.Parser Transit.MessageType
+    msgParser = Transit.TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
+    fileOrDirParser :: Opt.Parser Transit.MessageType
+    fileOrDirParser = Transit.TFile <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
 
-opts :: Opt.ParserInfo Options
+opts :: Opt.ParserInfo Transit.Options
 opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
+
+commandlineParser :: IO Transit.Options
+commandlineParser = Opt.execParser opts
