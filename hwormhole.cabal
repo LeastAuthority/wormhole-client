@@ -32,36 +32,30 @@ library
                      , Transit.Internal.Messages
                      , Transit.Internal.Pipeline
                      , Transit.Internal.Crypto
-  build-depends:       base            >= 4.6     && < 5
-                     , bytestring      >= 0.9     && < 1.0
+  build-depends:       aeson           >= 1.4     && < 2
                      , async           >= 2.1.0   && < 3.0
-                     , aeson           >= 1.4     && < 2
+                     , base            >= 4.6     && < 5
                      , binary          >= 0.7     && < 1.0
+                     , bytestring      >= 0.9     && < 1.0
                      , conduit         >= 1.2.13  && < 2.0
                      , conduit-extra   >  1.0.0   && < 2.0
                      , containers      >= 0.5.10  && < 1.0
+                     , cryptonite      >= 0.24    && < 1.0
+                     , filepath        >= 1.4.0   && < 2.0
+                     , haskeline       >= 0.7.4   && < 1.0
+                     , hex             >= 0.1.2   && < 1.0
                      , magic-wormhole  >= 0.1.0   && < 1.0
                      , memory          >= 0.14.15 && < 1.0
+                     , mtl             >= 2.2.2   && < 3.0
                      , network         >= 2.7     && < 3
+                     , network-info    >= 0.2.0   && < 1.0
                      , protolude       >= 0.2.1   && < 1.0
-                     , haskeline
-                     , hex
-                     , magic-wormhole
-                     , memory
-                     , mtl
-                     , network >=2.7 && <3
-                     , network-info
-                     , protolude
-                     , random
-                     , hex             >= 0.1.2   && < 1.0
+                     , random          >= 1.1     && < 2.0
                      , saltine         == 0.1.0.1 && < 1.0
-                     , cryptonite      >= 0.24    && < 1.0
                      , spake2          >= 0.4     && < 1.0
                      , text            >= 1.2.1   && < 2.0
+                     , transformers    >= 0.5.5   && < 1.0
                      , unix-compat     >= 0.5.0   && < 1.0
-                     , network-info    >= 0.2.0   && < 1.0
-                     , filepath        >= 1.4.0   && < 2.0
-                     , transformers
   other-modules:       Paths_hwormhole
   default-language:    Haskell2010
   default-extensions:  NoImplicitPrelude OverloadedStrings TypeApplications
