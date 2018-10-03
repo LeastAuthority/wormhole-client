@@ -1,7 +1,9 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Transit.Internal.App
   ( Env(..)
   , prepareAppEnv
   , app
+  , runApp
   )
 where
 
@@ -17,6 +19,8 @@ import qualified Crypto.Spake2 as Spake2
 import System.IO.Error (IOError)
 import System.Random (randomR, getStdGen)
 import Data.String (String)
+import Control.Monad.Trans.Except (ExceptT(..))
+import Control.Monad.Except (liftEither)
 
 import Transit.Internal.Conf (Options(..), Command(..))
 import Transit.Internal.Errors (Error(..), liftEitherCommError, CommunicationError(..))
@@ -67,74 +71,6 @@ allocatePassword wordlist = do
       Just oddW = snd <$> atMay wordlist r1
   return $ Text.concat [oddW, "-", evenW]
 
--- | Given the magic-wormhole session, appid, password, a function to print a helpful message
--- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
--- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
--- the wormhole securely. The receiver, on successfully receiving the file, would compute
--- a sha256 sum of the encrypted file and sends it across to the sender, along with an
--- acknowledgement, which the sender can verify.
-send :: Env -> MagicWormhole.Session -> Password -> MessageType -> IO (Either Error ())
-send env session password tfd = do
-  -- first establish a wormhole session with the receiver and
-  -- then talk the filetransfer protocol over it as follows.
-  let options = config env
-  let appid = appID env
-  let transitserver = transitUrl options
-  nameplate <- MagicWormhole.allocate session
-  mailbox <- MagicWormhole.claim session nameplate
-  peer <- MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
-  let (MagicWormhole.Nameplate n) = nameplate
-  printSendHelpText $ toS n <> "-" <> toS password
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
-    (\conn ->
-        case tfd of
-          TMsg msg -> do
-            let offer = MagicWormhole.Message msg
-            sendOffer conn offer
-            -- wait for "answer" message with "message_ack" key
-            liftEitherCommError <$> receiveMessageAck conn
-          TFile filepath ->
-            sendFile conn transitserver appid filepath
-    )
-
--- | receive a text message or file from the wormhole peer.
-receive :: Env -> MagicWormhole.Session -> Text -> IO (Either Error ())
-receive env session code = do
-  -- establish the connection
-  let options = config env
-  let appid = appID env
-  let transitserver = transitUrl options
-  let codeSplit = Text.split (=='-') code
-  let (Just nameplate) = headMay codeSplit
-  mailbox <- MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
-  peer <- MagicWormhole.open session mailbox
-  MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
-    (\conn -> do
-        -- unfortunately, the receiver has no idea which message to expect.
-        -- If the sender is only sending a text message, it gets an offer first.
-        -- if the sender is sending a file/directory, then transit comes first
-        -- and then offer comes in. `Transit.receiveOffer' will attempt to interpret
-        -- the bytestring as an offer message. If that fails, it passes the raw bytestring
-        -- as a Left value so that we can try to decode it as a TransitMsg.
-        someOffer <- receiveOffer conn
-        case someOffer of
-          Right (MagicWormhole.Message message) -> do
-            TIO.putStrLn message
-            result <- try (sendMessageAck conn "ok") :: IO (Either IOError ())
-            return $ bimap (const (NetworkError (ConnectionError "sending the ack message failed"))) identity result
-          Right (MagicWormhole.File _ _) -> do
-            sendMessageAck conn "not_ok"
-            return $ Left (NetworkError (ConnectionError "did not expect a file offer"))
-          Right (MagicWormhole.Directory _ _ _ _ _) ->
-            return $ Left (NetworkError (UnknownPeerMessage "directory offer is not supported"))
-          -- ok, we received the Transit Message, send back a transit message
-          Left received ->
-            case (decodeTransitMsg (toS received)) of
-              Left e -> return $ Left (NetworkError e)
-              Right transitMsg ->
-                receiveFile conn transitserver appid transitMsg
-    )
-
 genPasscodes :: [Text] -> [(Text, Text)] -> [Text]
 genPasscodes nameplates wordpairs =
   let evens = map fst wordpairs
@@ -183,24 +119,106 @@ getCode session wordlist = do
         Nothing -> return ""
         Just input -> return (toS input)
 
--- newtype AppM a = AppM ( Env -> IO (Either AppError a) )
--- type AppM a = ReaderT Env (EitherT AppError IO a)
+newtype App a = App {
+  getApp :: ReaderT Env (ExceptT Error IO) a
+  } deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env, MonadError Error)
 
-app :: Env -> IO (Either Error ())
-app env = do
+runApp :: App a -> Env -> IO (Either Error a)
+runApp appM env = runExceptT (runReaderT (getApp appM) env)
+
+-- | Given the magic-wormhole session, appid, password, a function to print a helpful message
+-- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
+-- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
+-- the wormhole securely. The receiver, on successfully receiving the file, would compute
+-- a sha256 sum of the encrypted file and sends it across to the sender, along with an
+-- acknowledgement, which the sender can verify.
+send :: MagicWormhole.Session -> Password -> MessageType -> App ()
+send session password tfd = do
+  env <- ask
+  -- first establish a wormhole session with the receiver and
+  -- then talk the filetransfer protocol over it as follows.
+  let options = config env
+  let appid = appID env
+  let transitserver = transitUrl options
+  nameplate <- liftIO $ MagicWormhole.allocate session
+  mailbox <- liftIO $ MagicWormhole.claim session nameplate
+  peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
+  let (MagicWormhole.Nameplate n) = nameplate
+  liftIO $ printSendHelpText $ toS n <> "-" <> toS password
+  result <- liftIO $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
+    (\conn ->
+        case tfd of
+          TMsg msg -> do
+            let offer = MagicWormhole.Message msg
+            sendOffer conn offer
+            -- wait for "answer" message with "message_ack" key
+            liftEitherCommError <$> receiveMessageAck conn
+          TFile filepath ->
+            sendFile conn transitserver appid filepath
+    )
+  liftEither result
+
+-- | receive a text message or file from the wormhole peer.
+receive :: MagicWormhole.Session -> Text -> App ()
+receive session code = do
+  env <- ask
+  -- establish the connection
+  let options = config env
+  let appid = appID env
+  let transitserver = transitUrl options
+  let codeSplit = Text.split (=='-') code
+  let (Just nameplate) = headMay codeSplit
+  mailbox <- liftIO $ MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
+  peer <- liftIO $ MagicWormhole.open session mailbox
+  result <- liftIO $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS (Text.strip code)))
+    (\conn -> do
+        -- unfortunately, the receiver has no idea which message to expect.
+        -- If the sender is only sending a text message, it gets an offer first.
+        -- if the sender is sending a file/directory, then transit comes first
+        -- and then offer comes in. `Transit.receiveOffer' will attempt to interpret
+        -- the bytestring as an offer message. If that fails, it passes the raw bytestring
+        -- as a Left value so that we can try to decode it as a TransitMsg.
+        someOffer <- receiveOffer conn
+        case someOffer of
+          Right (MagicWormhole.Message message) -> do
+            TIO.putStrLn message
+            result <- try (sendMessageAck conn "ok") :: IO (Either IOError ())
+            return $ bimap (const (NetworkError (ConnectionError "sending the ack message failed"))) identity result
+          Right (MagicWormhole.File _ _) -> do
+            sendMessageAck conn "not_ok"
+            return $ Left (NetworkError (ConnectionError "did not expect a file offer"))
+          Right (MagicWormhole.Directory _ _ _ _ _) ->
+            return $ Left (NetworkError (UnknownPeerMessage "directory offer is not supported"))
+          -- ok, we received the Transit Message, send back a transit message
+          Left received ->
+            case (decodeTransitMsg (toS received)) of
+              Left e -> return $ Left (NetworkError e)
+              Right transitMsg ->
+                receiveFile conn transitserver appid transitMsg
+    )
+  liftEither result
+
+app :: App ()
+app = do
+  env <- ask
   let options = config env
       endpoint = relayEndpoint options
   case cmd options of
     Send tfd ->
-      MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
-      password <- allocatePassword (wordList env)
-      send env session (toS password) tfd
+      (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
+          runApp (sendSession tfd session) env) >>= liftEither
     Receive maybeCode ->
-      MagicWormhole.runClient endpoint (appID env) (side env) $ \session -> do
-      code <- getWormholeCode session (wordList env) maybeCode
-      receive env session code
+      (liftIO $ MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
+          runApp (receiveSession maybeCode session) env) >>= liftEither
   where
     getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
     getWormholeCode session wordlist Nothing = getCode session wordlist
     getWormholeCode _ _ (Just code) = return code
-
+    sendSession offerMsg session = do
+      env <- ask
+      password <- liftIO $ allocatePassword (wordList env)
+      send session (toS password) offerMsg
+    receiveSession code session = do
+      env <- ask
+      maybeCode <- liftIO $ getWormholeCode session (wordList env) code
+      receive session maybeCode
