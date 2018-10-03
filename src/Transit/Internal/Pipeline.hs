@@ -25,7 +25,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 
-import Transit.Internal.Network (TCPEndpoint(..))
+import Transit.Internal.Network (TCPEndpoint(..), TransitEndpoint(..))
 import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..), CryptoError(..))
 
 -- | Given the peer network socket and the file path to be sent, this Conduit
@@ -34,10 +34,9 @@ import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..),
 -- receiver's decrypted copy.
 sendPipeline :: C.MonadResource m =>
                 FilePath
-             -> TCPEndpoint
-             -> SecretBox.Key
+             -> TransitEndpoint
              -> C.ConduitM a c m (Text, ())
-sendPipeline fp (TCPEndpoint s _) key =
+sendPipeline fp (TransitEndpoint (TCPEndpoint s _) key _) =
   C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | Receive the encrypted bytestream from a network socket, decrypt it and
@@ -46,10 +45,9 @@ sendPipeline fp (TCPEndpoint s _) key =
 receivePipeline :: C.MonadResource m =>
                    FilePath
                 -> Int
-                -> TCPEndpoint
-                -> SecretBox.Key
+                -> TransitEndpoint
                 -> C.ConduitM a c m (Text, ())
-receivePipeline fp len (TCPEndpoint s _) key =
+receivePipeline fp len (TransitEndpoint (TCPEndpoint s _) key _) =
     CN.sourceSocket s
     .| assembleRecordC
     .| decryptC key
@@ -81,7 +79,7 @@ decryptC key = loop Saltine.zero
       b <- C.await
       case b of
         Nothing -> return ()
-        Just bs -> do
+        Just bs ->
           case decrypt key (CipherText bs) of
             Right (PlainText plainText, nonce) -> do
               let seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
