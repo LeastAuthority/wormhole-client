@@ -30,6 +30,8 @@ data CryptoError = BadNonce Text
                  -- ^ The nonce value in the received message is invalid.
                  | CouldNotDecrypt Text
                  -- ^ We could not decrypt the incoming encrypted record.
+                 | KeyGenError Text
+                 -- ^ Could not generate transit keys.
                  deriving (Eq, Show)
 
 instance E.Exception CryptoError

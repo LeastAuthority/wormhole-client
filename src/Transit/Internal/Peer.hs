@@ -92,10 +92,12 @@ makeRelayHandshake key (MagicWormhole.Side side) =
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
-makeRecordKeys :: SecretBox.Key -> Maybe (SecretBox.Key, SecretBox.Key)
-makeRecordKeys key = (,) <$> makeSenderRecordKey key
-                     <*> makeReceiverRecordKey key
+makeRecordKeys :: SecretBox.Key -> Either CryptoError (SecretBox.Key, SecretBox.Key)
+makeRecordKeys key =
+  maybe (Left (KeyGenError "Could not generate record keys")) Right keyPair
   where
+    keyPair = (,) <$> makeSenderRecordKey key
+              <*> makeReceiverRecordKey key
     makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
     makeSenderRecordKey = Saltine.decode . (deriveKeyFromPurpose SenderRecord)
     makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
@@ -285,5 +287,4 @@ generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
   randomBytes <- getRandomBytes 8
   pure . MagicWormhole.Side . toS @ByteString . convertToBase Base16 $ (randomBytes :: ByteString)
-
 
