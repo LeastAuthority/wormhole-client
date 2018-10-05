@@ -16,7 +16,8 @@ import qualified Data.ByteString.Lazy as BL
 
 import Network.Socket (socketPort, Socket)
 import System.FilePath ((</>))
-import System.Directory (removeFile)
+import System.Directory (removeFile, getTemporaryDirectory)
+import System.IO.Temp (createTempDirectory)
 
 import qualified MagicWormhole
 
@@ -197,7 +198,9 @@ receiveFile conn transitserver appid transit = do
     Left err -> return $ Left (NetworkError (OfferError $ "unable to decode offer msg: " <> toS err))
     Right (MagicWormhole.File name size) -> rxFile s name size
     Right (MagicWormhole.Directory _mode name zipSize _ _uncompressedSize) -> do
-      let zipFile = "/tmp" </> (toS name)
+      systemTmpDir <- getTemporaryDirectory
+      tmpDir <- createTempDirectory systemTmpDir "womehole"
+      let zipFile = tmpDir </> (toS name)
       _ <- rxFile s zipFile zipSize
       -- TODO: check if the file system containing the current directory has
       -- enough space, by checking the uncompressedSize and the free space.

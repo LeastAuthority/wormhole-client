@@ -47,6 +47,8 @@ import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 import System.Directory.PathWalk (pathWalk)
+import System.Directory (getTemporaryDirectory)
+import System.IO.Temp (createTempDirectory)
 import Codec.Archive.Zip ( createArchive
                          , withArchive
                          , CompressionMethod ( Deflate )
@@ -320,8 +322,10 @@ type DirState = (Int, FileOffset)
 -- the files).
 zipDir :: FilePath -> IO (FilePath, DirState)
 zipDir filePath = do
+  systemTmpDir <- getTemporaryDirectory
+  tmpDir <- createTempDirectory systemTmpDir "wormhole"
   let dirName = takeBaseName (dropTrailingPathSeparator filePath)
-  let zipFileName = "/tmp" </> dirName <.> "zip"
+  let zipFileName = tmpDir </> dirName <.> "zip"
   ((_, stats), _) <- concurrently
                      (runStateT (dirStats filePath) (0,0))
                      (do
