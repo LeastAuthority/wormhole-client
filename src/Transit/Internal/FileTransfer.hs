@@ -199,7 +199,7 @@ receiveFile conn transitserver appid transit = do
     Right (MagicWormhole.File name size) -> rxFile s name size
     Right (MagicWormhole.Directory _mode name zipSize _ _uncompressedSize) -> do
       systemTmpDir <- getTemporaryDirectory
-      tmpDir <- createTempDirectory systemTmpDir "womehole"
+      tmpDir <- createTempDirectory systemTmpDir "wormhole"
       let zipFile = tmpDir </> (toS name)
       _ <- rxFile s zipFile zipSize
       -- TODO: check if the file system containing the current directory has
