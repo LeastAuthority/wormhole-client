@@ -104,7 +104,7 @@ instance FromJSON Ack where
     defaultOptions { sumEncoding = ObjectWithSingleField
                    , constructorTagModifier = camelTo2 '_'}
 
-data Ability = Ability { atype :: AbilityV1 }
+newtype Ability = Ability { atype :: AbilityV1 }
   deriving (Eq, Show, Generic)
 
 instance ToJSON Ability where
