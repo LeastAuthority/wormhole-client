@@ -26,7 +26,6 @@ module Transit
   , Conf.Options(..)
   , Conf.Command(..)
   , Errors.Error(..)
-  , Errors.liftEitherCommError
   , FileTransfer.MessageType(..)
   , MagicWormhole.parseWebSocketEndpoint
   , Network.parseTransitRelayUri

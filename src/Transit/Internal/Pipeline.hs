@@ -1,3 +1,4 @@
+-- | Description: Conduit pipelines for sending and receiving files and directories
 module Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline
@@ -54,6 +55,7 @@ receivePipeline fp len (TransitEndpoint (TCPEndpoint s _) key _) =
     .| CB.isolate len
     .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious fp
 
+-- | A conduit function to encrypt the incoming byte stream with the given key
 encryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 encryptC key = loop Saltine.zero
   where
@@ -71,6 +73,7 @@ encryptC key = loop Saltine.zero
               loop (Saltine.nudge nonce)
             Left e -> throwIO e
 
+-- | A conduit function to decrypt the incoming byte stream with the given key
 decryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()
 decryptC key = loop Saltine.zero
   where

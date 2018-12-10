@@ -1,3 +1,4 @@
+-- | Description: Module that exchanges messages with the Peer
 {-# LANGUAGE OverloadedStrings #-}
 module Transit.Internal.Peer
   ( makeSenderHandshake
@@ -82,6 +83,10 @@ import Transit.Internal.Crypto
 
 import qualified MagicWormhole
 
+-- | Make a bytestring for the handshake message sent by the
+-- sender which is of the form "transit sender XXXXXXX..XX ready\n\n"
+-- where /XXXXXX..XX/ is the hex ascii representation of the sender
+-- handshake key.
 makeSenderHandshake :: SecretBox.Key -> ByteString
 makeSenderHandshake key =
   (toS @Text @ByteString "transit sender ") <> hexid <> (toS @Text @ByteString " ready\n\n")
@@ -89,6 +94,9 @@ makeSenderHandshake key =
     subkey = deriveKeyFromPurpose SenderHandshake key
     hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
 
+-- | Make a bytestring for the handshake message sent by the receiver
+-- which is of the form "transit receiver XXXX...XX ready\n\n" where
+-- /XXXX...XX/ is the receiver handshake key.
 makeReceiverHandshake :: SecretBox.Key -> ByteString
 makeReceiverHandshake key =
   (toS @Text @ByteString "transit receiver ") <> hexid <> (toS @Text @ByteString " ready\n\n")
@@ -106,6 +114,10 @@ makeRelayHandshake key (MagicWormhole.Side side) =
     token = toS (toLower (toS @ByteString @Text (hex subkey)))
     sideBytes = toS @Text @ByteString side
 
+-- | Make sender and receiver symmetric keys for the records transmission.
+-- Records are chunks of data corresponding to the blocks of the file.
+-- Sender record key is used for decrypting incoming records and receiver
+-- record key is for sending file_ack back to the sender.
 makeRecordKeys :: SecretBox.Key -> Either CryptoError (SecretBox.Key, SecretBox.Key)
 makeRecordKeys key =
   maybe (Left (KeyGenError "Could not generate record keys")) Right keyPair
@@ -117,7 +129,7 @@ makeRecordKeys key =
     makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
     makeReceiverRecordKey = Saltine.decode . (deriveKeyFromPurpose ReceiverRecord)
 
--- |'transitExchange' exchanges transit message with the peer.
+-- |'senderTransitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
 -- Receiver sends either another Transit message or an Error message.
 senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either CommunicationError TransitMsg)
@@ -135,6 +147,7 @@ senderTransitExchange conn hs = do
       responseMsg <- receiveWormholeMessage conn
       return responseMsg
 
+-- | create and send a Transit message to the peer.
 sendTransitMsg :: MagicWormhole.EncryptedConnection -> [Ability] -> [ConnectionHint] -> IO ()
 sendTransitMsg conn abilities' hints' = do
   -- create transit message
@@ -143,12 +156,14 @@ sendTransitMsg conn abilities' hints' = do
   -- send the transit message (dictionary with key as "transit" and value as abilities)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText encodedTransitMsg)
 
+-- | Parse the given bytestring into a Transit Message
 decodeTransitMsg :: ByteString -> Either CommunicationError TransitMsg
 decodeTransitMsg received =
   case eitherDecode (toS received) of
     Right transitMsg -> Right transitMsg
     Left err -> Left $ TransitError (toS err)
 
+-- | Send an offer message to the connected peer over the wormhole
 sendOffer :: MagicWormhole.EncryptedConnection -> MagicWormhole.Offer -> IO ()
 sendOffer conn offer =
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode offer)))
@@ -164,6 +179,7 @@ receiveOffer conn = do
     Right dir@(MagicWormhole.Directory _ _ _ _ _) -> return $ Right dir
     Left _ -> return $ Left received
 
+-- | Receive an Ack message over the wormhole connection
 receiveMessageAck :: MagicWormhole.EncryptedConnection -> IO (Either CommunicationError ())
 receiveMessageAck conn = do
   rxTransitMsg <- receiveWormholeMessage conn
@@ -173,11 +189,14 @@ receiveMessageAck conn = do
                                      | otherwise -> return $ Left (TransitError "Message ack failed")
     Right s -> return $ Left (TransitError (show s))
 
+-- | Send an Ack message as a regular text message encapsulated in
+-- an 'Answer' message over the wormhole connection
 sendMessageAck :: MagicWormhole.EncryptedConnection -> Text -> IO ()
 sendMessageAck conn msg = do
   let ackMessage = Answer (MessageAck msg)
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode ackMessage)))
 
+-- | Exchange offer message with the peer over the wormhole connection
 senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text FilePath)
 senderOfferExchange conn path = do
   (filePath, rx) <- concurrently sendFileOrDirOffer receiveResponse
@@ -214,21 +233,27 @@ senderOfferExchange conn path = do
       sendOffer conn dirOffer
       return zipFilePath
 
+-- | Receive a bytestring via the established wormhole connection
 receiveWormholeMessage :: MagicWormhole.EncryptedConnection -> IO ByteString
 receiveWormholeMessage conn = do
   MagicWormhole.PlainText msg <- atomically $ MagicWormhole.receiveMessage conn
   return msg
 
+-- | Send a bytestring over the established wormhole connection
 sendWormholeMessage :: MagicWormhole.EncryptedConnection -> BL.ByteString -> IO ()
 sendWormholeMessage conn msg =
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS msg))
 
+-- | Error type for the Peer module
 data InvalidHandshake = InvalidHandshake
+                      -- ^ Handshake with the peer didn't succeed
                       | InvalidRelayHandshake
+                      -- ^ Handshake with the relay server didn't succeed
   deriving (Show, Eq)
 
 instance E.Exception InvalidHandshake where
 
+-- | Exchange handshake message with the Relay server.
 relayHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
 relayHandshakeExchange ep key side = do
   r <- sendRelayHandshake >> receiveAck
@@ -242,6 +267,11 @@ relayHandshakeExchange ep key side = do
     rHandshakeMsg = "ok\n"
     recvByteString n = recvBuffer ep n
 
+-- | Sender side exchange of the handshake messages. Sender sends send-side handshake
+-- message created by 'makeSenderHandshake' and concurrently receives the handshake
+-- message from the receive side and compares it with the bytestring created by
+-- 'makeReceiverHandshake'. If it matches, then it sends "go\n" to the receiver, else
+-- it sends "nevermind\n" to the receiver and returns an 'InvalidHandshake'.
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 senderHandshakeExchange ep key side = do
   when (conntype ep == Just RelayV1) $ do
@@ -263,6 +293,11 @@ senderHandshakeExchange ep key side = do
     rHandshakeMsg = makeReceiverHandshake key
     recvByteString n = recvBuffer ep n
 
+-- | Receiver side exchange of handshake messages. Receiver sends the receive-side
+-- handshake message appended with "go\n" and receives the handshake message from
+-- the sender. It then compares the message received from the sender with the locally
+-- computed sender handshake bytestring appended with "go\n". If they don't match, it
+-- returns an 'InvalidHandshake'.
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 receiverHandshakeExchange ep key side = do
   when (conntype ep == Just RelayV1) $ do
@@ -278,13 +313,17 @@ receiverHandshakeExchange ep key side = do
         sHandshakeMsg = makeSenderHandshake key
         rHandshakeMsg = makeReceiverHandshake key
         recvByteString n = recvBuffer ep n
-    
+
+-- | Create an encrypted Transit Ack message
 makeAckMessage :: SecretBox.Key -> ByteString -> Either CryptoError CipherText
 makeAckMessage key sha256Sum =
   let transitAckMsg = TransitAck "ok" (toS @ByteString @Text sha256Sum)
   in
     encrypt key Saltine.zero (PlainText (BL.toStrict (encode transitAckMsg)))
 
+-- | A Record is an encrypted chunk of byte string. On the wire, a header of
+-- 4 bytes which denotes the length of the payload is sent before sending the
+-- actual payload.
 sendRecord :: TCPEndpoint -> ByteString -> IO (Either CommunicationError Int)
 sendRecord ep record = do
   -- send size of the encrypted payload as 4 bytes, then send record
@@ -297,6 +336,9 @@ sendRecord ep record = do
     Left e -> return $ Left (ConnectionError (show e))
     Right x -> return $ Right x
 
+-- | Receive a packet corresponding to a record (4-byte header representing the
+-- length /n/, of the record, followed by /n/ bytes of encrypted payload) and then
+-- decrypts and returns the payload.
 receiveRecord :: TCPEndpoint -> SecretBox.Key -> IO (Either CryptoError ByteString)
 receiveRecord ep key = do
   -- read 4 bytes that consists of length
@@ -309,6 +351,8 @@ receiveRecord ep key = do
       Left e -> return $ Left e
       Right (PlainText plaintext, _) -> return $ Right plaintext
 
+-- | There is a separate 8-bytes of random 'side' for Transit protocol, which
+-- is different from the 'side' used in the wormhole encrypted channel establishment
 generateTransitSide :: MonadRandom m => m MagicWormhole.Side
 generateTransitSide = do
   randomBytes <- getRandomBytes 8

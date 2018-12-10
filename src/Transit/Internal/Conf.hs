@@ -1,3 +1,4 @@
+-- | Description: Application Configuration
 module Transit.Internal.Conf
   ( Options(..)
   , Command(..)
