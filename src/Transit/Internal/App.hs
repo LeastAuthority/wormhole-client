@@ -30,11 +30,16 @@ import Paths_hwormhole
 
 type Password = ByteString
 
+-- | Magic Wormhole transit app environment
 data Env
   = Env { appID :: MagicWormhole.AppID
+        -- ^ Application specific ID
         , side :: MagicWormhole.Side
+        -- ^ random 5-byte bytestring
         , config :: Options
+        -- ^ configuration like relay and transit url
         , wordList :: [(Text, Text)]
+        -- ^ pass code word list (list of pair of words)
         }
 
 -- | genWordlist would produce a list of the form

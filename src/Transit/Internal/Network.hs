@@ -1,3 +1,4 @@
+-- | Description: functions that deal with the network i/o
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -70,6 +71,7 @@ import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
 
+-- | Type representing the network protocol errors
 data CommunicationError
   = ConnectionError Text
   -- ^ We could not establish a socket connection.
@@ -136,6 +138,11 @@ parseTransitRelayUri url =
     then Just (RelayEndpoint { relayhost = host', relayport = read @Word16 (toS port') })
     else Nothing
 
+-- | The client at the sending side and receiving side may be
+-- invoked with different relay hint urls. These get exchanged
+-- in the transit message. After successfully receiving the transit
+-- message, each client should combine the hints of the peer along
+-- with its relay hints to get the full set of hints.
 buildRelayHints :: RelayEndpoint -> Set.Set ConnectionHint
 buildRelayHints (RelayEndpoint host' port') =
   Set.singleton $ Relay RelayV1 [Hint { hostname = host'
@@ -143,6 +150,7 @@ buildRelayHints (RelayEndpoint host' port') =
                                       , priority = 0.0
                                       , ctype = RelayV1 }]
 
+-- | Build a client's connection hint
 buildHints :: PortNumber -> RelayEndpoint -> IO (Set.Set ConnectionHint)
 buildHints portnum relayEndpoint = do
   directHints <- buildDirectHints portnum
@@ -155,6 +163,7 @@ data TCPEndpoint
     , conntype :: Maybe AbilityV1
     } deriving (Show, Eq)
 
+-- | A type representing an "authenticated" TCP endpoint.
 data TransitEndpoint
   = TransitEndpoint
     { peerEndpoint :: TCPEndpoint
