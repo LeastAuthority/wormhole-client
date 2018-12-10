@@ -14,37 +14,14 @@ with the Python `wormhole` application.
 
 ## Building
 
-We need a version of [`haskell-magic-wormhole`][2] from git at the moment. This will
-go away as soon as a new release is uploaded into hackage.
+You will need `cabal-install` version 2.2 or above that supports the `new-*` commands.
 
-If you have cabal-install version < 2.2, then it is recommended to use cabal sandbox.
+`git clone https://github.com/LeastAuthority/wormhole-client`
+
+and
 
 ```
 cd wormhole-client
-cabal sandbox init
-cabal sandbox add-source /path/to/haskell-magic-wormhole/sources
-cabal install --only-dependencies --enable-tests
-cabal build
-```
-
-cabal sandbox is going away in a future release and will get a sandbox-like feature
-automatically when one installs and builds dependencies. These features are available
-today with cabal-install version >= 2.2 with the `new-*` commands. If you are using
-cabal-install version >= 2.2, then here are the build steps:
-
-1. create a top level directory called `wormhole`
-2. `cd wormhole`
-3. `git clone https://github.com/LeastAuthority/haskell-magic-wormhole`
-4. `git clone https://github.com/LeastAuthority/wormhole-client`
-5. create a file called `cabal.project` that has just one line:
-```
-packages: wormhole-client haskell-magic-wormhole
-```
-
-That's it. Now, we use the `new-*`commands of `cabal-install` to download, build
-and install dependencies, test our code and run the executables.
-
-```
 cabal new-build hwormhole
 cabal new-test hwormhole
 cabal new-run hwormhole:hwormhole-exe -- send --text foobar
@@ -53,15 +30,13 @@ cabal new-run hwormhole:hwormhole-exe -- receive
 ```
 There is a `--help` command. It works for subcommands as well.
 
-## What works at the moment
+## Development
 
-- Message send and receive via direct or relay hints, interoperable with Brian's python client.
-- Completion support for typing in the code
+Please check the `Changelog.md` file for the latest changes.
 
 ## What's next?
 
-Please see `todo.org` for the full set of things to do to make it a full
-application.
+Adding support for sending via Tor connections is the next important task.
 
 ## Feedback
 

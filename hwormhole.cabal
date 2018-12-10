@@ -2,7 +2,7 @@
 -- For further documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hwormhole
-version:             0.1.0.1
+version:             0.1.0.0
 synopsis:            magic-wormhole client
 description:         A secure way to send files over the Internet using the magic-wormhole protocol
 license:             GPL-3
