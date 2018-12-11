@@ -40,7 +40,7 @@ jobs:
           command: |
              cabal update
              cabal install alex happy
-             cabal install cabal-install-2.2.0.0
+             cabal install cabal-install-2.4.1.0
 
       - save_cache:
           key: buildtools
@@ -48,23 +48,14 @@ jobs:
             - ~/.cabal/
 
       - run:
-          name: "clone haskell-magic-wormhole from git"
-          command: |
-            git clone https://github.com/LeastAuthority/haskell-magic-wormhole
-            cd haskell-magic-wormhole
-
-      - run:
           name: "Build"
           command: |
-            cabal update
-            cabal sandbox init
-            cabal sandbox add-source ./haskell-magic-wormhole
-            cabal install --only-dependencies --enable-tests
-            cabal build
+            cabal new-update
+            cabal new-build all
 
       - run:
           name: "Test"
           command: |
             export LC_ALL=C.UTF-8
-            cabal test
+            cabal new-test
 
