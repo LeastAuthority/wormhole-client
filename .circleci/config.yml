@@ -51,11 +51,13 @@ jobs:
           name: "Build"
           command: |
             cabal new-update
+            cabal new-configure --enable-tests
             cabal new-build all
 
       - run:
           name: "Test"
           command: |
             export LC_ALL=C.UTF-8
+            cabal new-configure --enable-tests
             cabal new-test
 
