@@ -1,3 +1,4 @@
+-- | Description: functions that deal with the network i/o
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -70,6 +71,7 @@ import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
 
+-- | Type representing the network protocol errors
 data CommunicationError
   = ConnectionError Text
   -- ^ We could not establish a socket connection.
@@ -83,6 +85,7 @@ data CommunicationError
   -- ^ We could not identify the message from peer.
   deriving (Eq, Show)
 
+-- | Listen on all the interfaces on a randomly assigned default port
 tcpListener :: IO Socket
 tcpListener = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
@@ -120,12 +123,14 @@ buildDirectHints portnum = do
                                                , priority = 0
                                                , ctype = DirectTcpV1 }) nonLoopbackInterfaces
 
+-- | Type representing a Relay Endpoint URL
 data RelayEndpoint
   = RelayEndpoint
   { relayhost :: Text
   , relayport :: Word16
   } deriving (Show, Eq)
 
+-- | Parse transit url of the form /tcp:hostname:port/
 parseTransitRelayUri :: String -> Maybe RelayEndpoint
 parseTransitRelayUri url =
   let parts = splitOn ":" (toS @String @Text url)
@@ -136,6 +141,11 @@ parseTransitRelayUri url =
     then Just (RelayEndpoint { relayhost = host', relayport = read @Word16 (toS port') })
     else Nothing
 
+-- | The client at the sending side and receiving side may be
+-- invoked with different relay hint urls. These get exchanged
+-- in the transit message. After successfully receiving the transit
+-- message, each client should combine the hints of the peer along
+-- with its relay hints to get the full set of hints.
 buildRelayHints :: RelayEndpoint -> Set.Set ConnectionHint
 buildRelayHints (RelayEndpoint host' port') =
   Set.singleton $ Relay RelayV1 [Hint { hostname = host'
@@ -143,18 +153,21 @@ buildRelayHints (RelayEndpoint host' port') =
                                       , priority = 0.0
                                       , ctype = RelayV1 }]
 
+-- | Build a client's connection hint
 buildHints :: PortNumber -> RelayEndpoint -> IO (Set.Set ConnectionHint)
 buildHints portnum relayEndpoint = do
   directHints <- buildDirectHints portnum
   let relayHints = buildRelayHints relayEndpoint
   return (directHints <> relayHints)
 
+-- | A type representing the connected TCP endpoint
 data TCPEndpoint
   = TCPEndpoint
     { sock :: Socket
     , conntype :: Maybe AbilityV1
     } deriving (Show, Eq)
 
+-- | A type representing an "authenticated" TCP endpoint
 data TransitEndpoint
   = TransitEndpoint
     { peerEndpoint :: TCPEndpoint
@@ -183,21 +196,29 @@ tryToConnect ability h@(Hint _ _ host portnum) =
       addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
       return addr
 
+-- | Low level function to send a fixed length bytestring to
+-- the peer represented by /ep/.
 sendBuffer :: TCPEndpoint -> ByteString -> IO Int
 sendBuffer ep = send (sock ep)
 
+-- | Low level function to receive a byte buffer of specified
+-- length from the peer represented by /ep/.
 recvBuffer :: TCPEndpoint -> Int -> IO ByteString
 recvBuffer ep = recv (sock ep)
 
+-- | Close the peer network connection.
 closeConnection :: TransitEndpoint -> IO ()
 closeConnection ep = close (sock (peerEndpoint ep))
 
+-- | Accept and return the TCP Endpoint representing the peer
 startServer :: Socket -> IO (Either CommunicationError TCPEndpoint)
 startServer sock' = do
   res <- try $ accept sock' :: IO (Either IOError (Socket, SockAddr))
   close sock'
   return $ bimap (const (ConnectionError "accept: IO error")) (\(conn, _) -> (TCPEndpoint conn Nothing)) res
 
+-- | Try to concurrently connect to the given list of connection hints and
+-- return the first peer that succeeds.
 startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do
   let sortedHs = sort hs

@@ -1,3 +1,5 @@
+-- | Description: Client-to-Client messages
+-- The JSON messages are derived from these Message types.
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Transit.Internal.Messages
@@ -27,9 +29,12 @@ import Data.Aeson
 
 import qualified Data.Set as Set
 
+-- | Type to represent the abilities
 data AbilityV1
   = DirectTcpV1
+  -- ^ Can send directly via TCP
   | RelayV1
+  -- ^ Can relay via a relay server
   deriving (Eq, Show, Generic)
 
 instance ToJSON AbilityV1 where
@@ -40,6 +45,8 @@ instance FromJSON AbilityV1 where
   parseJSON = genericParseJSON
     defaultOptions { constructorTagModifier = camelTo2 '-'}
 
+-- | Hints are messages that specify ways that the client
+-- can connect to the peer.
 data Hint = Hint { ctype :: AbilityV1
                  , priority :: Double
                  , hostname :: Text
@@ -63,10 +70,13 @@ instance FromJSON Hint where
                                   "ctype" -> "type"
                                   _ -> name }
 
+-- | Connection Hint is currently a direct hint or a relay hint
 data ConnectionHint
   = Direct Hint
+    -- ^ Direct Hint
   | Relay { rtype :: AbilityV1
           , hints :: [Hint] }
+    -- ^ Relay hint
   deriving (Eq, Show, Generic)
 
 instance Ord ConnectionHint where
@@ -89,9 +99,11 @@ instance FromJSON ConnectionHint where
                        \name -> case name of
                                   "rtype" -> "type"
                                   _ -> name }
-
+-- | Ack message type
 data Ack = FileAck Text
+           -- ^ File Ack
          | MessageAck Text
+           -- ^ Message Ack
          deriving (Eq, Show, Generic)
 
 instance ToJSON Ack where
@@ -104,6 +116,7 @@ instance FromJSON Ack where
     defaultOptions { sumEncoding = ObjectWithSingleField
                    , constructorTagModifier = camelTo2 '_'}
 
+-- | A newtype specifically for generating Ability JSON messages
 newtype Ability = Ability { atype :: AbilityV1 }
   deriving (Eq, Show, Generic)
 
@@ -117,10 +130,13 @@ instance FromJSON Ability where
     defaultOptions { sumEncoding = UntaggedValue
                    , fieldLabelModifier = const "type" }
 
+-- | Transit, Answer and Error Message from Client to Client
 data TransitMsg = Error Text
                 | Answer Ack
+                  -- ^ Answer message is sent on a successful transfer
                 | Transit { abilitiesV1 :: [Ability]
                           , hintsV1 :: Set.Set ConnectionHint }
+                  -- ^ Transit message
                 deriving (Eq, Show, Generic)
 
 instance ToJSON TransitMsg where
@@ -134,6 +150,7 @@ instance FromJSON TransitMsg where
                    , constructorTagModifier = camelTo2 '-'
                    , fieldLabelModifier = camelTo2 '-'}
 
+-- | Message sent by the receiver of the file to the sender
 data TransitAck
   = TransitAck
   { ack :: Text -- ^ "ack" is "ok" implies a successful transfer

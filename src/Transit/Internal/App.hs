@@ -1,3 +1,4 @@
+-- | Description: a file transfer monad transformer
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Transit.Internal.App
   ( Env(..)
@@ -23,18 +24,23 @@ import Control.Monad.Trans.Except (ExceptT(..))
 import Control.Monad.Except (liftEither)
 
 import Transit.Internal.Conf (Options(..), Command(..))
-import Transit.Internal.Errors (Error(..), liftEitherCommError, CommunicationError(..))
+import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
 import Paths_hwormhole
 
 type Password = ByteString
 
+-- | Magic Wormhole transit app environment
 data Env
   = Env { appID :: MagicWormhole.AppID
+        -- ^ Application specific ID
         , side :: MagicWormhole.Side
+        -- ^ random 5-byte bytestring
         , config :: Options
+        -- ^ configuration like relay and transit url
         , wordList :: [(Text, Text)]
+        -- ^ pass code word list (list of pair of words)
         }
 
 -- | genWordlist would produce a list of the form
@@ -55,6 +61,8 @@ genWordList wordlistFile = do
             Just sndWord = atMay ws 2
         in (firstWord, sndWord)
 
+
+-- | Create an 'Env', given the AppID, wordlist file and 'Options'
 prepareAppEnv :: Text -> FilePath -> Options -> IO Env
 prepareAppEnv appid wordlistPath options = do
   side' <- MagicWormhole.generateSide
@@ -119,10 +127,13 @@ getCode session wordlist = do
         Nothing -> return ""
         Just input -> return (toS input)
 
+-- | App Monad Transformer that reads the configuration from 'Env', runs
+-- a computation over the IO Monad and returns either the value 'a' or 'Error'
 newtype App a = App {
   getApp :: ReaderT Env (ExceptT Error IO) a
   } deriving (Functor, Applicative, Monad, MonadIO, MonadReader Env, MonadError Error)
 
+-- | run the App Monad Transformer
 runApp :: App a -> Env -> IO (Either Error a)
 runApp appM env = runExceptT (runReaderT (getApp appM) env)
 
@@ -152,7 +163,7 @@ send session password tfd = do
             let offer = MagicWormhole.Message msg
             sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
-            liftEitherCommError <$> receiveMessageAck conn
+            first NetworkError <$> receiveMessageAck conn
           TFile filepath ->
             sendFile conn transitserver appid filepath
     )
@@ -198,6 +209,9 @@ receive session code = do
     )
   liftEither result
 
+-- | A file transfer application that takes an 'Env' and depending on the
+-- config options, either sends or receives a file, directory or a text
+-- message from the peer.
 app :: App ()
 app = do
   env <- ask

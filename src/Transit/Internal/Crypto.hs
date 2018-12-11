@@ -1,3 +1,4 @@
+-- | Description: functions and types that deal with Cryptography
 module Transit.Internal.Crypto
   ( encrypt
   , decrypt
@@ -20,12 +21,15 @@ import qualified Crypto.KDF.HKDF as HKDF
 import Crypto.Hash (SHA256(..))
 import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 
+-- | Type for representing unencrypted plain text
 newtype PlainText = PlainText ByteString
   deriving (Eq, Show)
 
+-- | Type for representing encrypted cipher text.
 newtype CipherText = CipherText ByteString
   deriving (Eq)
 
+-- | Error Type for exceptions thrown by the Crypto module
 data CryptoError = BadNonce Text
                  -- ^ The nonce value in the received message is invalid.
                  | CouldNotDecrypt Text

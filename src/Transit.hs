@@ -1,5 +1,5 @@
 -- |
--- Description : A Magic Wormhole client that supports file transfer.
+-- Description : A Magic Wormhole library that supports file and directory transfer.
 --
 -- Magic Wormhole is a technology for getting things from one computer to another, safely.
 --
@@ -26,7 +26,6 @@ module Transit
   , Conf.Options(..)
   , Conf.Command(..)
   , Errors.Error(..)
-  , Errors.liftEitherCommError
   , FileTransfer.MessageType(..)
   , MagicWormhole.parseWebSocketEndpoint
   , Network.parseTransitRelayUri

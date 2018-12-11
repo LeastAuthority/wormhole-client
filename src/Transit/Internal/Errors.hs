@@ -1,7 +1,7 @@
+-- | Description: Module for representing Error types
 module Transit.Internal.Errors
-  ( liftEitherCommError
-    -- * Error
-  , Error(..)
+  ( -- * Error
+    Error(..)
   , N.CommunicationError(..)
   , P.InvalidHandshake
   , C.CryptoError
@@ -16,12 +16,10 @@ import qualified Transit.Internal.Network as N
 import qualified Transit.Internal.Crypto as C
 import qualified Transit.Internal.Peer as P
 
+-- | An Error type for the Magic Wormhole Transit Module
 data Error = CipherError C.CryptoError
            | NetworkError N.CommunicationError
            | HandshakeError P.InvalidHandshake
            deriving (Show)
 
 instance E.Exception Error
-
-liftEitherCommError :: Either N.CommunicationError a -> Either Error a
-liftEitherCommError = first NetworkError

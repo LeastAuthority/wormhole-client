@@ -1,3 +1,4 @@
+-- | Description: Functions for sending and receiving files/directories
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Transit.Internal.FileTransfer
@@ -60,9 +61,12 @@ import Transit.Internal.Pipeline
   ( sendPipeline
   , receivePipeline)
 
+-- | Transfer type
 data MessageType
   = TMsg Text
+    -- ^ Text message transfer
   | TFile FilePath
+    -- ^ File or Directory transfer
   deriving (Show, Eq)
 
 transitPurpose :: MagicWormhole.AppID -> ByteString
@@ -185,6 +189,7 @@ sendFile conn transitserver appid filepath = do
               else return (Right ())
             Left e -> return $ Left e
 
+-- | Receive a file or directory via the established MagicWormhole connection
 receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> MagicWormhole.AppID -> TransitMsg -> IO (Either Error ())
 receiveFile conn transitserver appid transit = do
   let abilities' = [Ability DirectTcpV1, Ability RelayV1]
