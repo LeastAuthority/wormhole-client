@@ -1,6 +1,6 @@
 clone_folder: "c:\\WORK"
 
-os: Visual Studio 2015
+image: Visual Studio 2015
 
 environment:
   global:
