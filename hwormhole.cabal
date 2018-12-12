@@ -2,14 +2,14 @@
 -- For further documentation, see http://haskell.org/cabal/users-guide/
 
 name:                hwormhole
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            magic-wormhole client
 description:         A secure way to send files over the Internet using the magic-wormhole protocol
 license:             GPL-3
 license-file:        LICENSE
-author:              Ramakrishnan Muthukrishnan
-maintainer:          ram@leastauthority.com
-copyright:           (c) 2018 Least Authority TFA Gmbh
+author:              Ramakrishnan Muthukrishnan <ram@leastauthority.com>, Jean-Paul Calderone <jean-paul@leastauthority.com>
+maintainer:          Least Authority TFA GmbH
+copyright:           (c) 2018 Least Authority TFA GmbH
 category:            Network
 build-type:          Simple
 extra-source-files:  ChangeLog.md
