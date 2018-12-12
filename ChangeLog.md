@@ -1,5 +1,10 @@
 # Revision history for haskell-magic-wormhole-client
 
+## 0.2.0.0  -- 2018-12-12
+
+* Fix a bug which shows up as a failed hwormhole to hwormhole transfer,
+  at the same time works fine with python magic-wormhole client.
+
 ## 0.1.0.0  -- 2018-12-10
 
 * First version of the haskell port of magic-wormhole client.
