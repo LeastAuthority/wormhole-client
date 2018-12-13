@@ -1,0 +1,36 @@
+clone_folder: "c:\\WORK"
+
+image: Visual Studio 2015
+
+environment:
+  global:
+    CABOPTS:  "--store-dir=C:\\SR --http-transport=plain-http"
+  matrix:
+    # 64 bit builds
+    - GHCVER: "8.4.2"
+      CHOCOPTS:
+    - GHCVER: "8.0.2"
+      CHOCOPTS:
+
+cache:
+- "C:\\SR"
+
+install:
+ - "choco install -y ghc --version %GHCVER% %CHOCOPTS%"
+ - "choco install -y cabal %CHOCOPTS%"
+ - "appveyor DownloadFile https://download.libsodium.org/libsodium/releases/libsodium-1.0.16-msvc.zip"
+ - "7z x libsodium-1.0.16-msvc.zip -oc:\\WORK\\sodium"
+ - "dir c:\\WORK\\sodium"
+ - "refreshenv"
+ - "set PATH=C:\\ghc\\ghc-%GHCVER%:C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin;%PATH%"
+ - "cabal --version"
+ - "ghc --version"
+ - "cabal %CABOPTS% new-update -vverbose+nowrap"
+
+build: off
+
+test_script:
+ - IF EXIST configure.ac bash -c "autoreconf -i"
+ - "echo packages:. > cabal.project"
+ - "set LIBRARY_PATH=c:\\WORK\\sodium\\x64\\Release\\v141\\dynamic"
+ - "cabal %CABOPTS% new-build --extra-include-dirs c:\\WORK\\sodium\\include  --extra-lib-dirs c:\\WORK\\sodium\\x64\\Release\\v141\\dynamic -j1 all"
