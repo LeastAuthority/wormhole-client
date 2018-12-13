@@ -4,15 +4,14 @@
 
 `hwormhole` is a haskell version of Brian Warner's [magic-wormhole][1] file
 transfer program (also called `wormhole`) that uses the SPAKE2 based wormhole
-protocol. We use Jonathan Lange's [Magic Wormhole haskell library][2] to 
-create this application that interoperates with the Python program that
-Brian Warner provides.
-
-This builds on the example application in the MagicWormhole library to
-build a full fledged wormhole file transfer application that interoperates
-with the Python `wormhole` application.
+protocol. Magic-wormhole allows the user to securely transfer a file from
+one computer to another, anywhere in the world. This program interoperates
+with the Python implementation of magic-wormhole program. We support transferring
+short text messages, files and directories.
 
 ## Building
+
+### On Unix
 
 You will need `cabal-install` version 2.2 or above that supports the `new-*` commands.
 
@@ -29,6 +28,13 @@ cabal new-run hwormhole:hwormhole-exe -- send /path/to/foobar.txt
 cabal new-run hwormhole:hwormhole-exe -- receive
 ```
 There is a `--help` command. It works for subcommands as well.
+
+### On Windows
+
+1. Download `libsodium` [pre-built library].
+2. Install Visual Studio 2015 redistributable to install `vcruntime140.dll` needed by `libsodium.dll`.
+3. On a command line shell (assuming `ghc` and `cabal-install` are installed and are already in the `PATH`), `set LIBRARY_PATH=C:\path\to\dir\containing\libsodium.dll\`
+4. Now, follow the steps above for Unix.
 
 ## Development
 
