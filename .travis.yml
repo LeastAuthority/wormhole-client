@@ -11,7 +11,7 @@ env:
     - env: "GHCVER=8.0.2"
 
 install:
- - "choco install -y ghc --version %GHCVER% %CHOCOPTS%"
+ - "choco install -y ghc --version ${GHCVER} ${CHOCOPTS}"
  - "choco install -y cabal %CHOCOPTS%"
  - "curl -O https://download.libsodium.org/libsodium/releases/libsodium-1.0.16-msvc.zip"
  - "7z x libsodium-1.0.16-msvc.zip -oc:\\WORK\\sodium"
