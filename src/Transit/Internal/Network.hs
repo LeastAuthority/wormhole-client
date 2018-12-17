@@ -15,7 +15,9 @@ module Transit.Internal.Network
   , recvBuffer
     -- * TCP Endpoint
   , closeConnection
-  , TCPEndpoint(..)
+  , TCPEndpoint
+  , getConnectionSocket
+  , getConnectionType
   , TransitEndpoint(..)
     -- * TCP Listener that listens on a random port, Server and Client
   , tcpListener
@@ -166,6 +168,12 @@ data TCPEndpoint
     { sock :: Socket
     , conntype :: Maybe AbilityV1
     } deriving (Show, Eq)
+
+getConnectionSocket :: TCPEndpoint -> Socket
+getConnectionSocket = sock
+
+getConnectionType :: TCPEndpoint -> Maybe AbilityV1
+getConnectionType = conntype
 
 -- | A type representing an "authenticated" TCP endpoint
 data TransitEndpoint

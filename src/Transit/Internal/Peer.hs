@@ -68,7 +68,8 @@ import Transit.Internal.Messages
   , AbilityV1(..)
   , ConnectionHint)
 import Transit.Internal.Network
-  ( TCPEndpoint(..)
+  ( TCPEndpoint
+  , getConnectionType
   , sendBuffer
   , recvBuffer
   , CommunicationError(..))
@@ -274,7 +275,7 @@ relayHandshakeExchange ep key side = do
 -- it sends "nevermind\n" to the receiver and returns an 'InvalidHandshake'.
 senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 senderHandshakeExchange ep key side = do
-  when (conntype ep == Just RelayV1) $ do
+  when (getConnectionType ep == Just RelayV1) $ do
     relayHandshakeExchange ep key side
   (_, r) <- concurrently sendHandshake rxHandshake
   if r == rHandshakeMsg
@@ -300,7 +301,7 @@ senderHandshakeExchange ep key side = do
 -- returns an 'InvalidHandshake'.
 receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 receiverHandshakeExchange ep key side = do
-  when (conntype ep == Just RelayV1) $ do
+  when (getConnectionType ep == Just RelayV1) $ do
     relayHandshakeExchange ep key side
   (_, r') <- concurrently sendHandshake rxHandshake
   r'' <- recvByteString (BS.length "go\n")

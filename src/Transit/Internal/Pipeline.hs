@@ -26,7 +26,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import qualified Crypto.Saltine.Class as Saltine
 
-import Transit.Internal.Network (TCPEndpoint(..), TransitEndpoint(..))
+import Transit.Internal.Network (getConnectionSocket, TransitEndpoint(..))
 import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..), CryptoError(..))
 
 -- | Given the peer network socket and the file path to be sent, this Conduit
@@ -37,8 +37,10 @@ sendPipeline :: C.MonadResource m =>
                 FilePath
              -> TransitEndpoint
              -> C.ConduitM a c m (Text, ())
-sendPipeline fp (TransitEndpoint (TCPEndpoint s _) key _) =
-  C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
+sendPipeline fp (TransitEndpoint ep key _) =
+  let s = getConnectionSocket ep
+  in
+    C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | Receive the encrypted bytestream from a network socket, decrypt it and
 -- write it into a file, also calculating the sha256 sum of the decrypted
@@ -48,7 +50,9 @@ receivePipeline :: C.MonadResource m =>
                 -> Int
                 -> TransitEndpoint
                 -> C.ConduitM a c m (Text, ())
-receivePipeline fp len (TransitEndpoint (TCPEndpoint s _) key _) =
+receivePipeline fp len (TransitEndpoint ep key _) =
+  let s = getConnectionSocket ep
+  in
     CN.sourceSocket s
     .| assembleRecordC
     .| decryptC key
