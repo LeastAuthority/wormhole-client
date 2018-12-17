@@ -6,13 +6,14 @@ env:
     - 'CABOPTS="--store-dir=C:\\SR --http-transport=plain-http" CHOCOPTS=""'
 
   matrix:
+    include:
     # 64 bit builds
-    - env: "GHCVER=8.4.2"
-    - env: "GHCVER=8.0.2"
+    - env: GHCVER=8.4.2 CABALVER=2.4.1.0
+    - env: GHCVER=8.0.2 CABALVER=2.4.1.0
 
 install:
- - choco install -y ghc --version ${GHCVER} ${CHOCOPTS}
- - choco install -y cabal ${CHOCOPTS}
+ - choco install -y ghc --version "$GHCVER" "$CHOCOPTS"
+ - choco install -y cabal --version "$CABALVER" "$CHOCOPTS"
  - choco install -y 7zip
  - choco install -y curl
  - curl -O https://download.libsodium.org/libsodium/releases/libsodium-1.0.16-msvc.zip
