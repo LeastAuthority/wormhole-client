@@ -5,10 +5,10 @@ env:
   global:
     - 'CABOPTS="--store-dir=C:\\SR --http-transport=plain-http" CHOCOPTS=""'
 
-matrix:
-  # 64 bit builds
-  - env: "GHCVER=8.4.2"
-  - env: "GHCVER=8.0.2"
+  matrix:
+    # 64 bit builds
+    - env: "GHCVER=8.4.2"
+    - env: "GHCVER=8.0.2"
 
 install:
  - "choco install -y ghc --version %GHCVER% %CHOCOPTS%"
