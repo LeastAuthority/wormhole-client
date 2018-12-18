@@ -164,7 +164,7 @@ runApp :: App a -> Env -> IO (Either Error a)
 runApp appM env = runExceptT (runReaderT (getApp appM) env)
 
 transitPurpose :: MagicWormhole.AppID -> ByteString
-transitPurpose (MagicWormhole.AppID appID) = toS appID <> "/transit-key"
+transitPurpose (MagicWormhole.AppID appid) = toS appid <> "/transit-key"
 
 -- | Given the magic-wormhole session, appid, password, a function to print a helpful message
 -- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
