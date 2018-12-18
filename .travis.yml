@@ -26,7 +26,7 @@ before_install:
  - cabal "$CABOPTS" new-update -vverbose+nowrap
 
 install:
- - set LIBRARY_PATH=c:\\WORK\\sodium\\x64\\Release\\v141\\dynamic
- - cabal "$CABOPTS" new-build --extra-include-dirs c:\\WORK\\sodium\\include  --extra-lib-dirs c:\\WORK\\sodium\\x64\\Release\\v141\\dynamic -j1 all
+ - export LIBRARY_PATH=/C/WORK/sodium/x64/Release/v141/dynamic
+ - cabal "$CABOPTS" new-build --extra-include-dirs /C/WORK/sodium/include  --extra-lib-dirs /C/WORK/sodium/x64/Release/v141/dynamic -j1 all
 
 script: []
