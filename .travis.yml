@@ -29,4 +29,5 @@ install:
  - export LIBRARY_PATH=/C/WORK/sodium/x64/Release/v141/dynamic
  - cabal "$CABOPTS" new-build --extra-include-dirs /C/WORK/sodium/include  --extra-lib-dirs /C/WORK/sodium/x64/Release/v141/dynamic -j1 all
 
-script: []
+script:
+ - cabal "$CABOPTS" new-test
