@@ -18,7 +18,6 @@ install:
  - choco install -y curl
  - curl -O https://download.libsodium.org/libsodium/releases/libsodium-1.0.16-msvc.zip
  - 7z x libsodium-1.0.16-msvc.zip -oc:\\WORK\\sodium
- - mkdir C:\\work
  - dir c:\\WORK\\sodium
  - refreshenv
  - set PATH=C:\\ghc\\ghc-%GHCVER%:C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin;%PATH%
