@@ -1,10 +1,7 @@
 -- | Description: Module that exchanges messages with the Peer
 {-# LANGUAGE OverloadedStrings #-}
 module Transit.Internal.Peer
-  ( makeSenderHandshake
-  , makeReceiverHandshake
-  , makeRecordKeys
-  , makeRelayHandshake
+  ( makeRecordKeys
   , senderTransitExchange
   , senderOfferExchange
   , sendOffer
@@ -23,6 +20,10 @@ module Transit.Internal.Peer
   , receiveRecord
   , unzipInto
   , Mode(..)
+  -- * for tests
+  , makeSenderHandshake
+  , makeReceiverHandshake
+  , makeRelayHandshake
   )
 where
 
@@ -267,8 +268,10 @@ relayHandshakeExchange ep key side = do
     rHandshakeMsg = "ok\n"
     recvByteString n = recvBuffer ep n
 
+-- | Client mode
 data Mode = Send | Receive
 
+-- | Exchange transit handshake message
 handshakeExchange :: Mode -> TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
 handshakeExchange Send = senderHandshakeExchange
 handshakeExchange Receive = receiverHandshakeExchange
