@@ -270,58 +270,43 @@ relayHandshakeExchange ep key side = do
 
 -- | Client mode
 data Mode = Send | Receive
+  deriving (Eq, Show)
 
 -- | Exchange transit handshake message
 handshakeExchange :: Mode -> TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
-handshakeExchange Send = senderHandshakeExchange
-handshakeExchange Receive = receiverHandshakeExchange
-
--- | Sender side exchange of the handshake messages. Sender sends send-side handshake
--- message created by 'makeSenderHandshake' and concurrently receives the handshake
--- message from the receive side and compares it with the bytestring created by
--- 'makeReceiverHandshake'. If it matches, then it sends "go\n" to the receiver, else
--- it sends "nevermind\n" to the receiver and returns an 'InvalidHandshake'.
-senderHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
-senderHandshakeExchange ep key side = do
+handshakeExchange mode ep key side = do
   when (conntype ep == Just RelayV1) $ do
     relayHandshakeExchange ep key side
   (_, r) <- concurrently sendHandshake rxHandshake
-  if r == rHandshakeMsg
-    then do
-    _ <- sendGo
-    return $ Right ()
-    else do
-    _ <- sendNeverMind
-    return $ Left InvalidHandshake
+  case mode of
+    Send -> do
+      -- compare received handshake with locally computed rx handshake
+      -- and if it matches, send go
+      if r == rHandshakeMsg
+        then do
+        _ <- sendGo
+        return $ Right ()
+        else do
+        _ <- sendNeverMind
+        return $ Left InvalidHandshake
+    Receive -> do
+      -- compare the received handshake with the locally computed tx handshake
+      -- and also receive "go\n" from the sender. if they are not matching,
+      -- send InvalidHandshake, else do nothing.
+      r' <- recvByteString (BS.length "go\n")
+      if (r <> r') == sHandshakeMsg <> "go\n"
+        then return $ Right ()
+        else return $ Left InvalidHandshake
   where
-    sendHandshake = sendBuffer ep sHandshakeMsg
-    rxHandshake = recvByteString (BS.length rHandshakeMsg)
+    sendHandshake | mode == Send = sendBuffer ep sHandshakeMsg
+                  | otherwise    = sendBuffer ep rHandshakeMsg
+    rxHandshake | mode == Send = recvByteString (BS.length rHandshakeMsg)
+                | otherwise    = recvByteString (BS.length sHandshakeMsg)
     sendGo = sendBuffer ep (toS @Text @ByteString "go\n")
     sendNeverMind = sendBuffer ep (toS @Text @ByteString "nevermind\n")
     sHandshakeMsg = makeSenderHandshake key
     rHandshakeMsg = makeReceiverHandshake key
     recvByteString n = recvBuffer ep n
-
--- | Receiver side exchange of handshake messages. Receiver sends the receive-side
--- handshake message appended with "go\n" and receives the handshake message from
--- the sender. It then compares the message received from the sender with the locally
--- computed sender handshake bytestring appended with "go\n". If they don't match, it
--- returns an 'InvalidHandshake'.
-receiverHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
-receiverHandshakeExchange ep key side = do
-  when (conntype ep == Just RelayV1) $ do
-    relayHandshakeExchange ep key side
-  (_, r') <- concurrently sendHandshake rxHandshake
-  r'' <- recvByteString (BS.length "go\n")
-  if (r' <> r'') == sHandshakeMsg <> "go\n"
-    then return $ Right ()
-    else return $ Left InvalidHandshake
-    where
-        sendHandshake = sendBuffer ep rHandshakeMsg
-        rxHandshake = recvByteString (BS.length sHandshakeMsg)
-        sHandshakeMsg = makeSenderHandshake key
-        rHandshakeMsg = makeReceiverHandshake key
-        recvByteString n = recvBuffer ep n
 
 -- | Create an encrypted Transit Ack message
 makeAckMessage :: SecretBox.Key -> ByteString -> Either CryptoError CipherText
