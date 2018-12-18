@@ -19,7 +19,6 @@ before_install:
  - curl -O https://download.libsodium.org/libsodium/releases/libsodium-1.0.16-msvc.zip
  - 7z x libsodium-1.0.16-msvc.zip -oc:\\WORK\\sodium
  - dir c:\\WORK\\sodium
- - set PATH=C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin;%PATH%
  - cabal --version
  - ghc --version
  - cabal "$CABOPTS" new-update -vverbose+nowrap
