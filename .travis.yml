@@ -11,7 +11,7 @@ env:
     - env: GHCVER=8.4.2 CABALVER=2.4.1.0
     - env: GHCVER=8.0.2 CABALVER=2.4.1.0
 
-install:
+before_install:
  - choco install -y ghc --version "$GHCVER" "$CHOCOPTS"
  - choco install -y cabal --version "$CABALVER" "$CHOCOPTS"
  - choco install -y 7zip
@@ -19,10 +19,13 @@ install:
  - curl -O https://download.libsodium.org/libsodium/releases/libsodium-1.0.16-msvc.zip
  - 7z x libsodium-1.0.16-msvc.zip -oc:\\WORK\\sodium
  - dir c:\\WORK\\sodium
- - refreshenv
- - set PATH=C:\\ghc\\ghc-%GHCVER%:C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin;%PATH%
+ - set PATH=C:\\msys64\\mingw64\\bin;C:\\msys64\\usr\\bin;%PATH%
  - cabal --version
  - ghc --version
- - cabal %CABOPTS% new-update -vverbose+nowrap
+ - cabal "$CABOPTS" new-update -vverbose+nowrap
+
+install:
+ - set LIBRARY_PATH=c:\\WORK\\sodium\\x64\\Release\\v141\\dynamic
+ - cabal "$CABOPTS" new-build --extra-include-dirs c:\\WORK\\sodium\\include  --extra-lib-dirs c:\\WORK\\sodium\\x64\\Release\\v141\\dynamic -j1 all
 
 script: []
