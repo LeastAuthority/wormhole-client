@@ -38,18 +38,18 @@ import Transit.Internal.Network
 
 import Transit.Internal.Peer
   ( makeRecordKeys
-  , senderHandshakeExchange
+  , handshakeExchange
   , senderTransitExchange
   , senderOfferExchange
   , receiveWormholeMessage
   , sendTransitMsg
   , sendWormholeMessage
-  , receiverHandshakeExchange
   , makeAckMessage
   , generateTransitSide
   , sendRecord
   , receiveRecord
-  , unzipInto)
+  , unzipInto
+  , Mode(..))
 
 import Transit.Internal.Messages
   ( TransitMsg( Transit, Answer )
@@ -90,12 +90,12 @@ receiveAckMessage (TransitEndpoint ep _ key) = do
                                         | otherwise -> return $ Left (NetworkError (TransitError "transit ack failure"))
         Left s -> return $ Left (NetworkError (TransitError (toS ("transit ack failure: " <> s))))
 
-establishSenderTransit :: RelayEndpoint -> SecretBox.Key -> TransitMsg -> Socket -> IO (Either Error TransitEndpoint)
-establishSenderTransit transitserver transitKey (Transit _peerAbilities peerHints) socket = do
+establishTransit :: Mode -> RelayEndpoint -> SecretBox.Key -> TransitMsg -> Socket -> IO (Either Error TransitEndpoint)
+establishTransit mode transitserver transitKey (Transit _peerAbilities peerHints) socket = do
   let ourRelayHints = buildRelayHints transitserver
-  -- combine our relay hints with peer's direct and relay hints
-  let allHints = Set.toList $ ourRelayHints <> peerHints
   side <- generateTransitSide
+  -- combine our relay hints with peer's direct and relay hints
+  let allHints = Set.toList (peerHints <> ourRelayHints)
   -- concurrently start client and server
   transitEndpoint <- race (startServer socket) (startClient allHints)
   let ep = either identity identity transitEndpoint
@@ -108,39 +108,13 @@ establishSenderTransit transitserver transitKey (Transit _peerAbilities peerHint
         Left e -> return (Left (CipherError e))
         Right (sRecordKey, rRecordKey) -> do
           -- 2. handshakeExchange
-          handshake <- senderHandshakeExchange endpoint transitKey side
+          handshake <- handshakeExchange mode endpoint transitKey side
           -- if handshakeExchange is successful, return the TCPEndpoint
           -- as, we now have a "secure" socket to communicate.
           case handshake of
             Left e -> return (Left (HandshakeError e))
             Right _ -> return $ Right (TransitEndpoint endpoint sRecordKey rRecordKey)
-establishSenderTransit _ _ _ _ = return $ Left (NetworkError (UnknownPeerMessage "Could not decode message"))
-
-establishReceiverTransit :: RelayEndpoint -> SecretBox.Key -> TransitMsg -> Socket -> IO (Either Error TransitEndpoint)
-establishReceiverTransit transitserver transitKey (Transit _peerAbilities peerHints) socket = do
-  let ourRelayHints = buildRelayHints transitserver
-  side <- generateTransitSide
-  -- combine our relay hints with peer's direct and relay hints
-  let allHints = Set.toList (peerHints <> ourRelayHints)
-  -- derive transit key
-  transitEndpoint <- race (startServer socket) (startClient allHints)
-  let ep = either identity identity transitEndpoint
-  case ep of
-    Left e -> return (Left (NetworkError e))
-    Right endpoint -> do
-      -- create sender/receiver record key, sender record key
-      --    for decrypting incoming records, receiver record key
-      --    for sending the file_ack back at the end.
-      let recordKeys = makeRecordKeys transitKey
-      case recordKeys of
-        Left e -> return $ Left (CipherError e)
-        Right (sRecordKey, rRecordKey) -> do
-          -- handshakeExchange
-          handshake <- receiverHandshakeExchange endpoint transitKey side
-          case handshake of
-            Left e -> return (Left (HandshakeError e))
-            Right _ -> return $ Right (TransitEndpoint endpoint sRecordKey rRecordKey)
-establishReceiverTransit _ _ _ _ = return $ Left (NetworkError (UnknownPeerMessage "Could not recognize the message"))
+establishTransit _ _ _ _ _ = return $ Left (NetworkError (UnknownPeerMessage "Could not decode message"))
 
 -- | Given the magic-wormhole session, appid, password, a function to print a helpful message
 -- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
@@ -164,7 +138,7 @@ sendFile conn transitserver transitKey filepath = do
         Left s -> return (Left (NetworkError (OfferError s)))
         Right _ -> do
           -- establish a transit connection
-          endpoint <- establishSenderTransit transitserver transitKey transit sock'
+          endpoint <- establishTransit Send transitserver transitKey transit sock'
           case endpoint of
             Left e -> return $ Left e
             Right ep -> do
@@ -214,7 +188,7 @@ receiveFile conn transitserver transitKey transit = do
         let ans = Answer (FileAck "ok")
         sendWormholeMessage conn (Aeson.encode ans)
         -- establish receive transit endpoint
-        endpoint <- establishReceiverTransit transitserver transitKey transit socket
+        endpoint <- establishTransit Receive transitserver transitKey transit socket
         case endpoint of
           Left e -> return $ Left e
           Right ep -> do

@@ -11,8 +11,7 @@ module Transit.Internal.Peer
   , receiveOffer
   , sendMessageAck
   , receiveMessageAck
-  , senderHandshakeExchange
-  , receiverHandshakeExchange
+  , handshakeExchange
   , sendTransitMsg
   , decodeTransitMsg
   , makeAckMessage
@@ -23,6 +22,7 @@ module Transit.Internal.Peer
   , sendRecord
   , receiveRecord
   , unzipInto
+  , Mode(..)
   )
 where
 
@@ -266,6 +266,12 @@ relayHandshakeExchange ep key side = do
     receiveAck = recvByteString (BS.length rHandshakeMsg)
     rHandshakeMsg = "ok\n"
     recvByteString n = recvBuffer ep n
+
+data Mode = Send | Receive
+
+handshakeExchange :: Mode -> TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO (Either InvalidHandshake ())
+handshakeExchange Send = senderHandshakeExchange
+handshakeExchange Receive = receiverHandshakeExchange
 
 -- | Sender side exchange of the handshake messages. Sender sends send-side handshake
 -- message created by 'makeSenderHandshake' and concurrently receives the handshake
