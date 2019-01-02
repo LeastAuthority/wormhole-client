@@ -94,13 +94,39 @@ printSendHelpText passcode = do
   TIO.putStrLn ""
   TIO.putStrLn $ "wormhole receive " <> passcode
 
-completeWord :: MonadIO m => [Text] -> HC.CompletionFunc m
-completeWord wordlist = HC.completeWord Nothing "" completionFunc
+data CompletionConfig
+  = CompletionConfig {
+       nameplates :: [Text]
+    -- ^ List of nameplates identifiers on the server
+     , oddWords :: [Text]
+    -- ^ PGP Odd words
+     , evenWords :: [Text]
+    -- ^ PGP Even words
+     , numWords :: Int
+    -- ^ Number of PGP words used in wormhole code
+     }
+
+simpleCompletion :: Text -> HC.Completion
+simpleCompletion text = (HC.simpleCompletion (toS text)) { HC.isFinished = False }
+
+completeWord :: MonadIO m => CompletionConfig -> HC.CompletionFunc m
+completeWord completionConfig = HC.completeWord Nothing "" completionFunc
   where
     completionFunc :: Monad m => String -> m [HC.Completion]
     completionFunc word = do
-      let completions = filter (toS word `Text.isPrefixOf`) wordlist
-      return $ map (HC.simpleCompletion . toS) completions
+      let (completed, partial) = Text.breakOnEnd "-" (toS word)
+          hypenCount = Text.count "-" completed
+          wordlist = if hypenCount == 0
+                        then nameplates completionConfig
+                        else if odd hypenCount
+                                then evenWords completionConfig
+                                else oddWords completionConfig
+          suffix = if hypenCount < numWords completionConfig
+                      then "-"
+                      else ""
+          completions = map (\w -> completed `Text.append` (w `Text.append` suffix)) .
+	                filter (Text.isPrefixOf partial) $ wordlist
+      return $ map simpleCompletion completions
 
 -- | Take an input code from the user with code completion.
 -- In order for the code completion to work, we need to find
@@ -111,12 +137,20 @@ getCode :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
 getCode session wordlist = do
   nameplates <- MagicWormhole.list session
   let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
+      odds = map fst wordlist
+      evens = map snd wordlist
+      completionConfig = CompletionConfig {
+                            nameplates = ns,
+                            oddWords = odds,
+                            evenWords = evens,
+                            numWords = 2
+                         }
   putText "Enter the receive wormhole code: "
-  H.runInputT (settings (genPasscodes ns wordlist)) getInput
+  H.runInputT (settings completionConfig) getInput
   where
-    settings :: MonadIO m => [Text] -> H.Settings m
-    settings possibleWords = H.Settings
-      { H.complete = completeWord possibleWords
+    settings :: MonadIO m => CompletionConfig -> H.Settings m
+    settings completionConfig = H.Settings
+      { H.complete = completeWord completionConfig
       , H.historyFile = Nothing
       , H.autoAddHistory = False
       }
