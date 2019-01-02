@@ -119,8 +119,8 @@ completeWord completionConfig = HC.completeWord Nothing "" completionFunc
           wordlist = if hypenCount == 0
                         then nameplates completionConfig
                         else if odd hypenCount
-                                then evenWords completionConfig
-                                else oddWords completionConfig
+                                then oddWords completionConfig
+                                else evenWords completionConfig
           suffix = if hypenCount < numWords completionConfig
                       then "-"
                       else ""
@@ -137,8 +137,8 @@ getCode :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
 getCode session wordlist = do
   nameplates <- MagicWormhole.list session
   let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
-      odds = map fst wordlist
-      evens = map snd wordlist
+      evens = map fst wordlist
+      odds = map snd wordlist
       completionConfig = CompletionConfig {
                             nameplates = ns,
                             oddWords = odds,
