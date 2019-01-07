@@ -40,6 +40,10 @@ There is a `--help` command. It works for subcommands as well.
 
 Please check the `Changelog.md` file for the latest changes.
 
+## Contributions
+
+We welcome all kinds of contributions (bug fixes, new features, documentation, tests etc). Please send them as github pull requests.
+
 ## What's next?
 
 Adding support for sending via Tor connections is the next important task.
