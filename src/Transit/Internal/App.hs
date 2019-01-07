@@ -79,14 +79,6 @@ allocatePassword wordlist = do
       Just oddW = snd <$> atMay wordlist r1
   return $ Text.concat [oddW, "-", evenW]
 
-genPasscodes :: [Text] -> [(Text, Text)] -> [Text]
-genPasscodes nameplates wordpairs =
-  let evens = map fst wordpairs
-      odds = map snd wordpairs
-      wordCombos = [ o <> "-" <> e | o <- odds, e <- evens ]
-  in
-    [ n <> "-" <> hiphenWord | n <- nameplates, hiphenWord <- wordCombos ]
-
 printSendHelpText :: Text -> IO ()
 printSendHelpText passcode = do
   TIO.putStrLn $  "Wormhole code is: " <> passcode
@@ -125,7 +117,7 @@ completeWord completionConfig = HC.completeWord Nothing "" completionFunc
                       then "-"
                       else ""
           completions = map (\w -> completed `Text.append` (w `Text.append` suffix)) .
-	                filter (Text.isPrefixOf partial) $ wordlist
+                        filter (Text.isPrefixOf partial) $ wordlist
       return $ map simpleCompletion completions
 
 -- | Take an input code from the user with code completion.
@@ -135,8 +127,8 @@ completeWord completionConfig = HC.completeWord Nothing "" completionFunc
 -- TODO: This function does too much. Perfect target for refactoring.
 getCode :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
 getCode session wordlist = do
-  nameplates <- MagicWormhole.list session
-  let ns = [ n | MagicWormhole.Nameplate n <- nameplates ]
+  nameplates' <- MagicWormhole.list session
+  let ns = [ n | MagicWormhole.Nameplate n <- nameplates' ]
       evens = map fst wordlist
       odds = map snd wordlist
       completionConfig = CompletionConfig {
