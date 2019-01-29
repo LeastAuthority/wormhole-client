@@ -163,6 +163,9 @@ newtype App a = App {
 runApp :: App a -> Env -> IO (Either Error a)
 runApp appM env = runExceptT (runReaderT (getApp appM) env)
 
+transitPurpose :: MagicWormhole.AppID -> ByteString
+transitPurpose (MagicWormhole.AppID appid) = toS appid <> "/transit-key"
+
 -- | Given the magic-wormhole session, appid, password, a function to print a helpful message
 -- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
 -- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
@@ -190,8 +193,9 @@ send session password tfd = do
             sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
             first NetworkError <$> receiveMessageAck conn
-          TFile filepath ->
-            sendFile conn transitserver appid filepath
+          TFile filepath -> do
+            let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+            sendFile conn transitserver transitKey filepath
     )
   liftEither result
 
@@ -230,8 +234,9 @@ receive session code = do
           Left received ->
             case decodeTransitMsg (toS received) of
               Left e -> return $ Left (NetworkError e)
-              Right transitMsg ->
-                receiveFile conn transitserver appid transitMsg
+              Right transitMsg -> do
+                let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                receiveFile conn transitserver transitKey transitMsg
     )
   liftEither result
 

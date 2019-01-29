@@ -15,8 +15,6 @@ where
 import Protolude
 
 import Hedgehog (MonadGen(..))
-import qualified Crypto.Saltine.Class as Saltine
-import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 import Crypto.Saltine.Internal.ByteSizes (boxNonce)
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
