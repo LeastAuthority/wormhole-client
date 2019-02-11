@@ -27,6 +27,7 @@ import Transit.Internal.Conf (Options(..), Command(..))
 import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
+import Transit.Internal.Network (connectToTor)
 import Paths_hwormhole
 
 type Password = ByteString
@@ -248,13 +249,22 @@ app = do
   env <- ask
   let options = config env
       endpoint = relayEndpoint options
-  case cmd options of
-    Send tfd ->
-      liftIO (MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
-          runApp (sendSession tfd session) env) >>= liftEither
-    Receive maybeCode ->
-      liftIO (MagicWormhole.runClient endpoint (appID env) (side env) $ \session ->
-          runApp (receiveSession maybeCode session) env) >>= liftEither
+  sock <- if useTor options
+          then do
+            res <- liftIO $ connectToTor endpoint
+            return $ bimap NetworkError Just res
+          else
+            return (Right Nothing)
+  case sock of
+    Right sock' -> do
+      case cmd options of
+        Send tfd ->
+          liftIO (MagicWormhole.runClient endpoint (appID env) (side env) sock' $ \session ->
+                     runApp (sendSession tfd session) env) >>= liftEither
+        Receive maybeCode ->
+          liftIO (MagicWormhole.runClient endpoint (appID env) (side env) sock' $ \session ->
+                     runApp (receiveSession maybeCode session) env) >>= liftEither
+    Left e -> liftEither (Left e)
   where
     getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
     getWormholeCode session wordlist Nothing = getCode session wordlist

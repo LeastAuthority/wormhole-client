@@ -43,6 +43,9 @@ optionsParser
       Opt.help "Transit relay to use" <>
       Opt.value defaultTransitUrl <>
       Opt.showDefault )
+    <*> Opt.switch
+    ( Opt.long "tor" <>
+      Opt.help "use Tor" )
   where
     -- | Default URL for relay server.
     --

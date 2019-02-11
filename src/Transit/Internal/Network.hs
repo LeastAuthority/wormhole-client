@@ -21,6 +21,7 @@ module Transit.Internal.Network
   , tcpListener
   , startServer
   , startClient
+  , connectToTor
     -- * Errors
   , CommunicationError(..)
   ) where
@@ -67,6 +68,8 @@ import Data.Text (splitOn)
 import Data.String (String)
 import System.IO.Error (IOError)
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import qualified Network.Socks5 as Socks
+import MagicWormhole (WebSocketEndpoint(..))
 
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
@@ -241,3 +244,14 @@ startClient hs = do
                            Direct h -> (h:dhs, rhs)
                            Relay _ hs' -> (dhs, hs' <> rhs)
 
+-- | connect to a tor socks proxy
+connectToTor :: WebSocketEndpoint -> IO (Either CommunicationError Socket)
+connectToTor endpoint = do
+  TIO.putStrLn "attempting to connect via Tor ..."
+  res <- try $ Socks.socksConnect conf (remote endpoint) :: IO (Either IOError (Socket, (Socks.SocksHostAddress, PortNumber)))
+  return $ bimap (const (ConnectionError "cannot connect to tor: IO error")) fst res
+  where
+    conf = Socks.defaultSocksConf "127.0.0.1" (fromInteger 9050)
+    remote ep =
+      let (WebSocketEndpoint hostname' port' _) = ep in
+        Socks.SocksAddress (Socks.SocksAddrDomainName (toS hostname')) (fromIntegral port')

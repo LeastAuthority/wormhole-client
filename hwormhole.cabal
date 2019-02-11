@@ -50,6 +50,7 @@ library
                      , mtl             >= 2.2.2   && < 3.0
                      , network         >= 2.7     && < 3
                      , network-info    >= 0.2.0   && < 1.0
+                     , socks           >= 0.5.6   && < 1.0
                      , pathwalk        >= 0.3.1.2 && < 1.0
                      , protolude       >= 0.2.1   && < 1.0
                      , random          >= 1.1     && < 2.0
