@@ -32,6 +32,7 @@ import Transit.Internal.Conf (Options(..), Command(..))
 import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
+import Transit.Internal.Network (connectToTor)
 
 <<<<<<< HEAD
 import Transit.Internal.Network (connectToTor)
