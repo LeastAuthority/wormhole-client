@@ -40,7 +40,6 @@ import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
 import Data.ByteString.Builder(toLazyByteString, word32BE, byteString)
 import Data.Bits (shiftL)
-import Data.Hex (hex)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset, FileMode)
 import System.PosixCompat.Files (getFileStatus, fileSize, fileMode, isDirectory)
@@ -93,7 +92,7 @@ makeSenderHandshake key =
   (toS @Text @ByteString "transit sender ") <> hexid <> (toS @Text @ByteString " ready\n\n")
   where
     subkey = deriveKeyFromPurpose SenderHandshake key
-    hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
+    hexid = toS (toLower (toS @ByteString @Text (convertToBase Base16 subkey)))
 
 -- | Make a bytestring for the handshake message sent by the receiver
 -- which is of the form "transit receiver XXXX...XX ready\n\n" where
@@ -103,7 +102,7 @@ makeReceiverHandshake key =
   (toS @Text @ByteString "transit receiver ") <> hexid <> (toS @Text @ByteString " ready\n\n")
   where
     subkey = deriveKeyFromPurpose ReceiverHandshake key
-    hexid = toS (toLower (toS @ByteString @Text (hex subkey)))
+    hexid = toS (toLower (toS @ByteString @Text (convertToBase Base16 subkey)))
 
 -- | create relay handshake bytestring
 -- "please relay HEXHEX for side XXXXX\n"
@@ -112,7 +111,7 @@ makeRelayHandshake key (MagicWormhole.Side side) =
   (toS @Text @ByteString "please relay ") <> token <> (toS @Text @ByteString " for side ") <> sideBytes <> "\n"
   where
     subkey = deriveKeyFromPurpose RelayHandshake key
-    token = toS (toLower (toS @ByteString @Text (hex subkey)))
+    token = toS (toLower (toS @ByteString @Text (convertToBase Base16 subkey)))
     sideBytes = toS @Text @ByteString side
 
 -- | Make sender and receiver symmetric keys for the records transmission.
