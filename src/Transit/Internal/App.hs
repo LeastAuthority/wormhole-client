@@ -5,6 +5,8 @@ module Transit.Internal.App
   , prepareAppEnv
   , app
   , runApp
+  , send
+  , receive
   )
 where
 
