@@ -18,7 +18,7 @@
 --   2. Negotiate a shared 'Messages.Nameplate' so peers can find each other on the server ('Rendezvous.allocate', 'Rendezvous.list')
 --   3. Use the shared 'Messages.Nameplate' to 'Rendezvous.open' a shared 'Messages.Mailbox'
 --   4. Use a secret password shared between peers to establish an encrypted connection ('Peer.withEncryptedConnection')
---   5. Establish a TCP connection directly if they are reachable on the same network or via a relay server and send the encrypted file or a directory over the connection.
+--   5. Establish a TCP connection directly if they are reachable on the same network or via a relay server (if the peers are behind NAT and cannot talk to each other directly) and send the encrypted file or a directory over the connection.
 --
 -- The password is never sent over the wire.
 -- Rather, it is used to negotiate a session key using SPAKE2,
