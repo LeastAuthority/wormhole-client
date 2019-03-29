@@ -28,6 +28,6 @@ main :: IO ()
 main = do
   env <- Transit.prepareAppEnv appid =<< commandlineParser
   result <- Transit.runApp Transit.app env
-  either (TIO.putStrLn . show) return result
+  either (TIO.putStrLn . show) (const $ TIO.putStrLn "Transfer complete!") result
     where
       appid = "lothar.com/wormhole/text-or-file-xfer"
