@@ -30,8 +30,11 @@ import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
 
+<<<<<<< HEAD
 import Transit.Internal.Network (connectToTor)
 
+=======
+>>>>>>> App: refactor names of functions and variables
 -- | Magic Wormhole transit app environment
 data Env
   = Env { appID :: MagicWormhole.AppID
@@ -49,8 +52,8 @@ prepareAppEnv appid options = do
   let appID' = MagicWormhole.AppID appid
   return $ Env appID' side' options
 
-allocatePassword :: [(Word8, EvenWord, OddWord)] -> IO Text
-allocatePassword wordlist = do
+allocateCode :: [(Word8, EvenWord, OddWord)] -> IO Text
+allocateCode wordlist = do
   g <- getStdGen
   let (r1, g') = randomR (0, 255) g
       (r2, _) = randomR (0, 255) g'
@@ -145,14 +148,14 @@ runApp appM env = runExceptT (runReaderT (getApp appM) env)
 transitPurpose :: MagicWormhole.AppID -> ByteString
 transitPurpose (MagicWormhole.AppID appid) = toS appid <> "/transit-key"
 
--- | Given the magic-wormhole session, appid, password, a function to print a helpful message
+-- | Given the magic-wormhole session, appid, pass code, a function to print a helpful message
 -- on the command the receiver needs to type (simplest would be just a `putStrLn`) and the
 -- path on the disk of the sender of the file that needs to be sent, `sendFile` sends it via
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> Password -> MessageType -> App ()
-send session password tfd = do
+send :: MagicWormhole.Session -> Text -> MessageType -> App ()
+send session code tfd = do
   env <- ask
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
@@ -163,8 +166,9 @@ send session password tfd = do
   mailbox <- liftIO $ MagicWormhole.claim session nameplate
   peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
   let (MagicWormhole.Nameplate n) = nameplate
-  liftIO $ printSendHelpText $ toS n <> "-" <> toS password
-  result <- liftIO $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS n <> "-" <> password))
+  let passcode = toS n <> "-" <> toS code
+  liftIO $ printSendHelpText passcode
+  result <- liftIO $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS passcode))
     (\conn ->
         case tfd of
           TMsg msg -> do
@@ -248,8 +252,8 @@ app = do
     getWormholeCode session Nothing = getCode session wordList
     getWormholeCode _ (Just code) = return code
     sendSession offerMsg session = do
-      password <- liftIO $ allocatePassword wordList
-      send session (toS password) offerMsg
-    receiveSession code session = do
-      maybeCode <- liftIO $ getWormholeCode session code
-      receive session maybeCode
+      code <- liftIO $ allocateCode wordList
+      send session (toS code) offerMsg
+    receiveSession maybeCode session = do
+      code <- liftIO $ getWormholeCode session maybeCode
+      receive session code
