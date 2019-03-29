@@ -26,7 +26,7 @@ import Options
 
 main :: IO ()
 main = do
-  env <- Transit.prepareAppEnv appid "wordlist.txt" =<< commandlineParser
+  env <- Transit.prepareAppEnv appid =<< commandlineParser
   result <- Transit.runApp Transit.app env
   either (TIO.putStrLn . show) return result
     where
