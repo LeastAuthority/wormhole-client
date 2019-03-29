@@ -1,7 +1,8 @@
--- | Description: a file transfer monad transformer
+-- | Description: a file-transfer monad transformer
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Transit.Internal.App
   ( Env(..)
+  , App
   , prepareAppEnv
   , app
   , runApp

@@ -1,5 +1,12 @@
 # Revision history for haskell-magic-wormhole-client
 
+## 0.2.0.1  -- 2019-03-29
+
+* Get rid of the dependency on the 'hex' library.
+* PGP wordlist is an external dependency now, the wordlist has been
+  removed. 'Env' does not carry the wordlist around anymore.
+* Expose 'App.send' and 'App.receive' functions.
+
 ## 0.2.0.0  -- 2018-12-12
 
 * Fix a bug which shows up as a failed hwormhole to hwormhole transfer,
