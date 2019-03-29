@@ -22,15 +22,15 @@ import System.Random (randomR, getStdGen)
 import Data.String (String)
 import Control.Monad.Trans.Except (ExceptT(..))
 import Control.Monad.Except (liftEither)
+import Data.Text.PgpWordlist.Internal.Words (wordList)
+import Data.Text.PgpWordlist.Internal.Types (EvenWord(..), OddWord(..))
 
 import Transit.Internal.Conf (Options(..), Command(..))
 import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
-import Transit.Internal.Network (connectToTor)
-import Paths_hwormhole
 
-type Password = ByteString
+import Transit.Internal.Network (connectToTor)
 
 -- | Magic Wormhole transit app environment
 data Env
@@ -40,45 +40,23 @@ data Env
         -- ^ random 5-byte bytestring
         , config :: Options
         -- ^ configuration like relay and transit url
-        , wordList :: [(Text, Text)]
-        -- ^ pass code word list (list of pair of words)
         }
 
--- | genWordlist would produce a list of the form
---   [ ("aardwark", "adroitness"),
---     ("absurd", "adviser"),
---     ....
---     ("zulu", "yucatan") ]
-genWordList :: FilePath -> IO [(Text, Text)]
-genWordList wordlistFile = do
-  file <- TIO.readFile wordlistFile
-  let contents = map toWordPair $ Text.lines file
-  return contents
-    where
-      toWordPair :: Text -> (Text, Text)
-      toWordPair line =
-        let ws = map Text.toLower $ Text.words line
-            Just firstWord = atMay ws 1
-            Just sndWord = atMay ws 2
-        in (firstWord, sndWord)
-
-
--- | Create an 'Env', given the AppID, wordlist file and 'Options'
-prepareAppEnv :: Text -> FilePath -> Options -> IO Env
-prepareAppEnv appid wordlistPath options = do
+-- | Create an 'Env', given the AppID and 'Options'
+prepareAppEnv :: Text -> Options -> IO Env
+prepareAppEnv appid options = do
   side' <- MagicWormhole.generateSide
-  wordlist <- genWordList =<< getDataFileName wordlistPath
   let appID' = MagicWormhole.AppID appid
-  return $ Env appID' side' options wordlist
+  return $ Env appID' side' options
 
-allocatePassword :: [(Text, Text)] -> IO Text
+allocatePassword :: [(Word8, EvenWord, OddWord)] -> IO Text
 allocatePassword wordlist = do
   g <- getStdGen
   let (r1, g') = randomR (0, 255) g
       (r2, _) = randomR (0, 255) g'
-      Just evenW = fst <$> atMay wordlist r2
-      Just oddW = snd <$> atMay wordlist r1
-  return $ Text.concat [oddW, "-", evenW]
+      Just (_, evenW, _) = atMay wordlist r2
+      Just (_, _, oddW) = atMay wordlist r1
+  return $ Text.concat [unOddWord oddW, "-", unEvenWord evenW]
 
 printSendHelpText :: Text -> IO ()
 printSendHelpText passcode = do
@@ -126,12 +104,12 @@ completeWord completionConfig = HC.completeWord Nothing "" completionFunc
 -- the possible open nameplates, the possible words and then
 -- do the completion as the user types the code.
 -- TODO: This function does too much. Perfect target for refactoring.
-getCode :: MagicWormhole.Session -> [(Text, Text)] -> IO Text
+getCode :: MagicWormhole.Session -> [(Word8, EvenWord, OddWord)] -> IO Text
 getCode session wordlist = do
   nameplates' <- MagicWormhole.list session
   let ns = [ n | MagicWormhole.Nameplate n <- nameplates' ]
-      evens = map fst wordlist
-      odds = map snd wordlist
+      evens = [ unEvenWord n | (_, n, _) <- wordlist]
+      odds  = [ unOddWord m | (_, _, m) <- wordlist]
       completionConfig = CompletionConfig {
                             nameplates = ns,
                             oddWords = odds,
@@ -266,14 +244,12 @@ app = do
                      runApp (receiveSession maybeCode session) env) >>= liftEither
     Left e -> liftEither (Left e)
   where
-    getWormholeCode :: MagicWormhole.Session -> [(Text, Text)] -> Maybe Text -> IO Text
-    getWormholeCode session wordlist Nothing = getCode session wordlist
-    getWormholeCode _ _ (Just code) = return code
+    getWormholeCode :: MagicWormhole.Session -> Maybe Text -> IO Text
+    getWormholeCode session Nothing = getCode session wordList
+    getWormholeCode _ (Just code) = return code
     sendSession offerMsg session = do
-      env <- ask
-      password <- liftIO $ allocatePassword (wordList env)
+      password <- liftIO $ allocatePassword wordList
       send session (toS password) offerMsg
     receiveSession code session = do
-      env <- ask
-      maybeCode <- liftIO $ getWormholeCode session (wordList env) code
+      maybeCode <- liftIO $ getWormholeCode session code
       receive session maybeCode
