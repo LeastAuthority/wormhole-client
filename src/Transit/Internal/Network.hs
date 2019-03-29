@@ -186,11 +186,9 @@ tryToConnect ability h@(Hint _ _ host portnum) =
                     (\(sock', _) -> close sock')
                     (\(sock', addr) -> do
                         connect sock' $ addrAddress addr
-                        TIO.putStrLn "Connected"
                         return (TCPEndpoint sock' (Just ability))))
   where
     init host' port' = withSocketsDo $ do
-      TIO.putStrLn $ "trying to connect to " <> (show h)
       addr <- resolve (toS host') (show port')
       sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
       return (sock', addr)
@@ -226,8 +224,6 @@ startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do
   let sortedHs = sort hs
       (dHs, rHs) = segregateHints sortedHs
-  TIO.putStrLn ("Direct Hints" <> (show dHs))
-  TIO.putStrLn ("Relay Hints" <> (show rHs))
   (ep1, ep2) <- concurrently
                 (asum (map (tryToConnect DirectTcpV1) dHs))
                 (asum (map (tryToConnect RelayV1) rHs))
