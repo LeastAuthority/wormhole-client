@@ -34,11 +34,6 @@ import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
 import Transit.Internal.Network (connectToTor)
 
-<<<<<<< HEAD
-import Transit.Internal.Network (connectToTor)
-
-=======
->>>>>>> App: refactor names of functions and variables
 -- | Magic Wormhole transit app environment
 data Env
   = Env { appID :: MagicWormhole.AppID

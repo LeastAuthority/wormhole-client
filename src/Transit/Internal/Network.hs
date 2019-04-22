@@ -42,8 +42,8 @@ import Network.Socket
   , SocketType ( Stream )
   , close
   , socket
-  , Socket(..)
-  , SockAddr
+  , Socket
+  , SockAddr (SockAddrInet)
   , connect
   , bind
   , listen
@@ -54,6 +54,7 @@ import Network.Socket
   , SocketOption( ReuseAddr )
   , AddrInfoFlag ( AI_NUMERICSERV )
   , withSocketsDo
+  , tupleToHostAddress
   )
 
 import Network.Info
@@ -180,7 +181,7 @@ data TransitEndpoint
 
 
 tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
-tryToConnect ability h@(Hint _ _ host portnum) =
+tryToConnect ability (Hint _ _ host portnum) =
   timeout 1000000 (bracketOnError
                     (init host portnum)
                     (\(sock', _) -> close sock')
@@ -244,10 +245,10 @@ startClient hs = do
 connectToTor :: WebSocketEndpoint -> IO (Either CommunicationError Socket)
 connectToTor endpoint = do
   TIO.putStrLn "attempting to connect via Tor ..."
+  let conf = Socks.defaultSocksConf (SockAddrInet 9050 (tupleToHostAddress (127, 0, 0, 1)))
   res <- try $ Socks.socksConnect conf (remote endpoint) :: IO (Either IOError (Socket, (Socks.SocksHostAddress, PortNumber)))
   return $ bimap (const (ConnectionError "cannot connect to tor: IO error")) fst res
   where
-    conf = Socks.defaultSocksConf "127.0.0.1" (fromInteger 9050)
     remote ep =
       let (WebSocketEndpoint hostname' port' _) = ep in
         Socks.SocksAddress (Socks.SocksAddrDomainName (toS hostname')) (fromIntegral port')
