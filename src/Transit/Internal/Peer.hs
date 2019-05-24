@@ -257,7 +257,7 @@ instance E.Exception InvalidHandshake where
 relayHandshakeExchange :: TCPEndpoint -> SecretBox.Key -> MagicWormhole.Side -> IO ()
 relayHandshakeExchange ep key side = do
   r <- sendRelayHandshake >> receiveAck
-  if r == "ok\n"
+  if r == rHandshakeMsg
     then return ()
     else throwIO InvalidRelayHandshake
   where
