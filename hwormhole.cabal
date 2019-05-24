@@ -103,7 +103,7 @@ test-suite hwormhole-tests
                     , saltine
                     , hwormhole
                     , magic-wormhole
-                    , hedgehog
+                    , hedgehog         >= 0.6     && <1
   other-modules:      ProtocolTests
                     , MessagesTests
                     , PipelineTests
