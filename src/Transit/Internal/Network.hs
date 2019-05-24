@@ -21,6 +21,7 @@ module Transit.Internal.Network
   , tcpListener
   , startServer
   , startClient
+  , connectToTor
     -- * Errors
   , CommunicationError(..)
   ) where
@@ -41,8 +42,8 @@ import Network.Socket
   , SocketType ( Stream )
   , close
   , socket
-  , Socket(..)
-  , SockAddr
+  , Socket
+  , SockAddr (SockAddrInet)
   , connect
   , bind
   , listen
@@ -53,6 +54,7 @@ import Network.Socket
   , SocketOption( ReuseAddr )
   , AddrInfoFlag ( AI_NUMERICSERV )
   , withSocketsDo
+  , tupleToHostAddress
   )
 
 import Network.Info
@@ -67,6 +69,8 @@ import Data.Text (splitOn)
 import Data.String (String)
 import System.IO.Error (IOError)
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
+import qualified Network.Socks5 as Socks
+import MagicWormhole (WebSocketEndpoint(..))
 
 import qualified Data.Text.IO as TIO
 import qualified Data.Set as Set
@@ -177,7 +181,7 @@ data TransitEndpoint
 
 
 tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
-tryToConnect ability h@(Hint _ _ host portnum) =
+tryToConnect ability (Hint _ _ host portnum) =
   timeout 1000000 (bracketOnError
                     (init host portnum)
                     (\(sock', _) -> close sock')
@@ -237,3 +241,14 @@ startClient hs = do
                            Direct h -> (h:dhs, rhs)
                            Relay _ hs' -> (dhs, hs' <> rhs)
 
+-- | connect to a tor socks proxy
+connectToTor :: WebSocketEndpoint -> IO (Either CommunicationError Socket)
+connectToTor endpoint = do
+  TIO.putStrLn "attempting to connect via Tor ..."
+  let conf = Socks.defaultSocksConf (SockAddrInet 9050 (tupleToHostAddress (127, 0, 0, 1)))
+  res <- try $ Socks.socksConnect conf (remote endpoint) :: IO (Either IOError (Socket, (Socks.SocksHostAddress, PortNumber)))
+  return $ bimap (const (ConnectionError "cannot connect to tor: IO error")) fst res
+  where
+    remote ep =
+      let (WebSocketEndpoint hostname' port' _) = ep in
+        Socks.SocksAddress (Socks.SocksAddrDomainName (toS hostname')) (fromIntegral port')
