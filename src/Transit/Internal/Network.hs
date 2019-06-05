@@ -241,13 +241,21 @@ startClient hs = do
                            Direct h -> (h:dhs, rhs)
                            Relay _ hs' -> (dhs, hs' <> rhs)
 
+torPort :: PortNumber
+torPort = 9050
+
+tbbPort :: PortNumber
+tbbPort = 9150
+
 -- | connect to a tor socks proxy
 connectToTor :: WebSocketEndpoint -> IO (Either CommunicationError Socket)
 connectToTor endpoint = do
   TIO.putStrLn "attempting to connect via Tor ..."
-  let conf = Socks.defaultSocksConf (SockAddrInet 9050 (tupleToHostAddress (127, 0, 0, 1)))
-  res <- try $ Socks.socksConnect conf (remote endpoint) :: IO (Either IOError (Socket, (Socks.SocksHostAddress, PortNumber)))
-  return $ bimap (const (ConnectionError "cannot connect to tor: IO error")) fst res
+  let torSockConf = Socks.defaultSocksConf (SockAddrInet torPort (tupleToHostAddress (127, 0, 0, 1)))
+      tbbSockConf = Socks.defaultSocksConf (SockAddrInet tbbPort (tupleToHostAddress (127, 0, 0, 1)))
+  res <- try $ Socks.socksConnect torSockConf (remote endpoint) <|>
+         Socks.socksConnect tbbSockConf (remote endpoint) :: IO (Either IOError (Socket, (Socks.SocksHostAddress, PortNumber)))
+  return $ bimap (const (ConnectionError "cannot connect to tor: check whether tor daemon or tor browser is running.")) fst res
   where
     remote ep =
       let (WebSocketEndpoint hostname' port' _) = ep in
