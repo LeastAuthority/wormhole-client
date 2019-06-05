@@ -17,7 +17,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 
 import Network.Socket (socketPort, Socket)
-import System.FilePath ((</>))
+import System.FilePath ((</>), takeFileName)
 import System.Directory (removeFile, getTemporaryDirectory)
 import System.IO.Temp (createTempDirectory)
 
@@ -170,7 +170,7 @@ receiveFile conn transitserver transitKey transit = do
   offerMsg <- receiveWormholeMessage conn
   case Aeson.eitherDecode (toS offerMsg) of
     Left err -> return $ Left (NetworkError (OfferError $ "unable to decode offer msg: " <> toS err))
-    Right (MagicWormhole.File name size) -> rxFile s name size
+    Right (MagicWormhole.File name size) -> rxFile s (takeFileName name) size
     Right (MagicWormhole.Directory _mode name zipSize _ _uncompressedSize) -> do
       systemTmpDir <- getTemporaryDirectory
       tmpDir <- createTempDirectory systemTmpDir "wormhole"
