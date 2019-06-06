@@ -33,6 +33,8 @@ import qualified Data.Set as Set
 data AbilityV1
   = DirectTcpV1
   -- ^ Can send directly via TCP
+  | TorTcpV1
+  -- ^ Can send via Tor
   | RelayV1
   -- ^ Can relay via a relay server
   deriving (Eq, Show, Generic)

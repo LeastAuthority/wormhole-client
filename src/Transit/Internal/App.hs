@@ -161,6 +161,7 @@ send session code tfd = do
   let options = config env
   let appid = appID env
   let transitserver = transitUrl options
+  let tor = useTor options
   nameplate <- liftIO $ MagicWormhole.allocate session
   mailbox <- liftIO $ MagicWormhole.claim session nameplate
   peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
@@ -177,7 +178,7 @@ send session code tfd = do
             first NetworkError <$> receiveMessageAck conn
           TFile filepath -> do
             let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-            sendFile conn transitserver transitKey filepath
+            sendFile conn transitserver transitKey filepath tor
     )
   liftEither result
 
@@ -187,6 +188,7 @@ receive session code = do
   env <- ask
   -- establish the connection
   let options = config env
+  let tor = useTor options
   let appid = appID env
   let transitserver = transitUrl options
   let codeSplit = Text.split (=='-') code
@@ -218,7 +220,7 @@ receive session code = do
               Left e -> return $ Left (NetworkError e)
               Right transitMsg -> do
                 let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                receiveFile conn transitserver transitKey transitMsg
+                receiveFile conn transitserver transitKey transitMsg tor
     )
   liftEither result
 
