@@ -16,7 +16,7 @@ import qualified Data.Set as Set
 import qualified Data.ByteString.Lazy as BL
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
 
-import Network.Socket (socketPort, Socket)
+import Network.Socket (Socket)
 import System.FilePath ((</>), takeFileName)
 import System.Directory (removeFile, getTemporaryDirectory)
 import System.IO.Temp (createTempDirectory)
@@ -27,6 +27,7 @@ import Transit.Internal.Errors (Error(..))
 import Transit.Internal.Crypto (CipherText(..))
 import Transit.Internal.Network
   ( tcpListener
+  , getSocketPort
   , buildHints
   , buildRelayHints
   , startServer
@@ -90,15 +91,18 @@ receiveAckMessage (TransitEndpoint ep _ key) = do
                                         | otherwise -> return $ Left (NetworkError (TransitError "transit ack failure"))
         Left s -> return $ Left (NetworkError (TransitError (toS ("transit ack failure: " <> s))))
 
-establishTransit :: Mode -> RelayEndpoint -> SecretBox.Key -> TransitMsg -> Socket -> IO (Either Error TransitEndpoint)
+establishTransit :: Mode -> RelayEndpoint -> SecretBox.Key -> TransitMsg -> Maybe Socket -> IO (Either Error TransitEndpoint)
 establishTransit mode transitserver transitKey (Transit _peerAbilities peerHints) socket = do
   let ourRelayHints = buildRelayHints transitserver
   side <- generateTransitSide
   -- combine our relay hints with peer's direct and relay hints
   let allHints = Set.toList (peerHints <> ourRelayHints)
   -- concurrently start client and server
-  transitEndpoint <- race (startServer socket) (startClient allHints)
-  let ep = either identity identity transitEndpoint
+  ep <- case socket of
+          Nothing -> startClient allHints
+          Just sock' -> do
+            transitEndpoint <- race (startServer sock') (startClient allHints)
+            return $ either identity identity transitEndpoint
   case ep of
     Left e -> return (Left (NetworkError e))
     Right endpoint -> do
@@ -122,11 +126,11 @@ establishTransit _ _ _ _ _ = return $ Left (NetworkError (UnknownPeerMessage "Co
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> SecretBox.Key -> FilePath -> IO (Either Error ())
-sendFile conn transitserver transitKey filepath = do
+sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> SecretBox.Key -> FilePath -> Bool -> IO (Either Error ())
+sendFile conn transitserver transitKey filepath useTor = do
     -- exchange abilities
-  sock' <- tcpListener
-  portnum <- socketPort sock'
+  sock' <- tcpListener useTor
+  portnum <- getSocketPort sock'
   ourHints <- buildHints portnum transitserver
   transitResp <- senderTransitExchange conn (Set.toList ourHints)
   case transitResp of
@@ -159,11 +163,11 @@ sendFile conn transitserver transitKey filepath = do
                 Left e -> return $ Left e
 
 -- | Receive a file or directory via the established MagicWormhole connection
-receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> SecretBox.Key -> TransitMsg -> IO (Either Error ())
-receiveFile conn transitserver transitKey transit = do
-  let abilities' = [Ability DirectTcpV1, Ability RelayV1]
-  s <- tcpListener
-  portnum <- socketPort s
+receiveFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> SecretBox.Key -> TransitMsg -> Bool -> IO (Either Error ())
+receiveFile conn transitserver transitKey transit useTor = do
+  let abilities' = [Ability DirectTcpV1, Ability TorTcpV1, Ability RelayV1]
+  s <- tcpListener useTor
+  portnum <- getSocketPort s
   ourHints <- buildHints portnum transitserver
   sendTransitMsg conn abilities' (Set.toList ourHints)
   -- now expect an offer message

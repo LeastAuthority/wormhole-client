@@ -25,6 +25,7 @@ tests = hspec $ do
   describe "Ability tests" $ do
     it "encode Ability" $ do
       encode DirectTcpV1 `shouldBe` "\"direct-tcp-v1\""
+      encode TorTcpV1 `shouldBe` "\"tor-tcp-v1\""
       encode RelayV1 `shouldBe` "\"relay-v1\""
     it "decode Ability" $ do
       let s1 = "\"direct-tcp-v1\"" :: Text

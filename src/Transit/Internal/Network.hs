@@ -19,6 +19,7 @@ module Transit.Internal.Network
   , TransitEndpoint(..)
     -- * TCP Listener that listens on a random port, Server and Client
   , tcpListener
+  , getSocketPort
   , startServer
   , startClient
   , connectToTor
@@ -42,6 +43,7 @@ import Network.Socket
   , SocketType ( Stream )
   , close
   , socket
+  , socketPort
   , Socket
   , SockAddr (SockAddrInet)
   , connect
@@ -90,15 +92,22 @@ data CommunicationError
   deriving (Eq, Show)
 
 -- | Listen on all the interfaces on a randomly assigned default port
-tcpListener :: IO Socket
-tcpListener = do
+tcpListener :: Bool -> IO (Maybe Socket)
+tcpListener True = return Nothing
+tcpListener False = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
   addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show defaultPort))
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   setSocketOption sock' ReuseAddr 1
   bind sock' (addrAddress addr)
   listen sock' 5
-  return sock'
+  return (Just sock')
+
+getSocketPort :: Maybe Socket -> IO (Maybe PortNumber)
+getSocketPort Nothing     = return Nothing
+getSocketPort (Just sock') = do
+  portnum <- socketPort sock'
+  return (Just portnum)
 
 type Hostname = Text
 
@@ -158,8 +167,9 @@ buildRelayHints (RelayEndpoint host' port') =
                                       , ctype = RelayV1 }]
 
 -- | Build a client's connection hint
-buildHints :: PortNumber -> RelayEndpoint -> IO (Set.Set ConnectionHint)
-buildHints portnum relayEndpoint = do
+buildHints :: Maybe PortNumber -> RelayEndpoint -> IO (Set.Set ConnectionHint)
+buildHints Nothing relayEndpoint = return (buildRelayHints relayEndpoint)
+buildHints (Just portnum) relayEndpoint = do
   directHints <- buildDirectHints portnum
   let relayHints = buildRelayHints relayEndpoint
   return (directHints <> relayHints)
@@ -224,11 +234,15 @@ startServer sock' = do
 startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do
   let sortedHs = sort hs
-      (dHs, rHs) = segregateHints sortedHs
-  (ep1, ep2) <- concurrently
-                (asum (map (tryToConnect DirectTcpV1) dHs))
-                (asum (map (tryToConnect RelayV1) rHs))
-  let maybeEndPoint = ep1 <|> ep2
+  maybeEndPoint <- case segregateHints sortedHs of
+                     ([], []) -> return Nothing
+                     ([], rHs) -> asum (map (tryToConnect RelayV1) rHs)
+                     (dHs, []) -> asum (map (tryToConnect DirectTcpV1) dHs)
+                     (dHs, rHs) -> do
+                       (ep1, ep2) <- concurrently
+                                     (asum (map (tryToConnect DirectTcpV1) dHs))
+                                     (asum (map (tryToConnect RelayV1) rHs))
+                       return $ ep1 <|> ep2
   case maybeEndPoint of
     Just ep -> return (Right ep)
     Nothing -> return (Left (ConnectionError "Peer socket is not active"))

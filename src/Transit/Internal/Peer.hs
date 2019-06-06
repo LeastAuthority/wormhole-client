@@ -134,7 +134,7 @@ makeRecordKeys key =
 -- Receiver sends either another Transit message or an Error message.
 senderTransitExchange :: MagicWormhole.EncryptedConnection -> [ConnectionHint] -> IO (Either CommunicationError TransitMsg)
 senderTransitExchange conn hs = do
-  let abilities' = [Ability DirectTcpV1, Ability RelayV1]
+  let abilities' = [Ability DirectTcpV1, Ability TorTcpV1, Ability RelayV1]
   (_, rxMsg) <- concurrently (sendTransitMsg conn abilities' hs) receiveTransitMsg
   case eitherDecode (toS rxMsg) of
     Right t@(Transit _ _) -> return (Right t)
