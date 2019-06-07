@@ -28,11 +28,32 @@ import Data.String (String)
 
 import qualified Transit
 
+cmdlineParser :: Opt.Parser Transit.Cmdline
+cmdlineParser
+  = Transit.Cmdline
+    <$> optionsParser
+    <*> commandParser
+
+commandParser :: Opt.Parser Transit.Command
+commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
+  where
+    sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message, a file or a directory"))
+    receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
+    receiveOptions :: Opt.Parser Transit.Command
+    receiveOptions = Transit.Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
+    sendOptions :: Opt.Parser Transit.Command
+    sendOptions = Transit.Send <$> parseMessageType
+    parseMessageType :: Opt.Parser Transit.MessageType
+    parseMessageType = msgParser <|> fileOrDirParser
+    msgParser :: Opt.Parser Transit.MessageType
+    msgParser = Transit.TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
+    fileOrDirParser :: Opt.Parser Transit.MessageType
+    fileOrDirParser = Transit.TFile <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
+
 optionsParser :: Opt.Parser Transit.Options
 optionsParser
   = Transit.Options
-    <$> commandParser
-    <*> Opt.option
+  <$> Opt.option
     (Opt.maybeReader Transit.parseWebSocketEndpoint)
     ( Opt.long "relayserver-url" <>
       Opt.help "Endpoint for the Relay server" <>
@@ -69,24 +90,8 @@ optionsParser
     parseAppId :: String -> Maybe Transit.AppID
     parseAppId appid = Just (Transit.AppID (toS appid))
 
-commandParser :: Opt.Parser Transit.Command
-commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
-  where
-    sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message, a file or a directory"))
-    receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
-    receiveOptions :: Opt.Parser Transit.Command
-    receiveOptions = Transit.Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
-    sendOptions :: Opt.Parser Transit.Command
-    sendOptions = Transit.Send <$> parseMessageType
-    parseMessageType :: Opt.Parser Transit.MessageType
-    parseMessageType = msgParser <|> fileOrDirParser
-    msgParser :: Opt.Parser Transit.MessageType
-    msgParser = Transit.TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
-    fileOrDirParser :: Opt.Parser Transit.MessageType
-    fileOrDirParser = Transit.TFile <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
+opts :: Opt.ParserInfo Transit.Cmdline
+opts = Opt.info (Opt.helper <*> cmdlineParser) (Opt.fullDesc <> Opt.header "wormhole")
 
-opts :: Opt.ParserInfo Transit.Options
-opts = Opt.info (Opt.helper <*> optionsParser) (Opt.fullDesc <> Opt.header "wormhole")
-
-commandlineParser :: IO Transit.Options
+commandlineParser :: IO Transit.Cmdline
 commandlineParser = Opt.execParser opts

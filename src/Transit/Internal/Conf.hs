@@ -1,7 +1,8 @@
 -- | Description: Application Configuration
 module Transit.Internal.Conf
-  ( Options(..)
+  ( Cmdline(..)
   , Command(..)
+  , Options(..)
   )
 where
 
@@ -13,18 +14,24 @@ import Transit.Internal.Network (RelayEndpoint)
 import Transit.Internal.FileTransfer (MessageType)
 
 -- | Application Configuration options
+data Cmdline
+  = Cmdline
+  { options :: Options
+    -- ^ command line arguments
+  , cmd :: Command
+    -- ^ send or receive
+  } deriving (Eq, Show)
+
 data Options
   = Options
-  { cmd :: Command
-  -- ^ send or receive
-  , relayEndpoint :: MagicWormhole.WebSocketEndpoint
-  -- ^ Rendezvous server websocket endpoint URL
+  { relayEndpoint :: MagicWormhole.WebSocketEndpoint
+    -- ^ Rendezvous server websocket endpoint URL
   , transitUrl :: RelayEndpoint
-  -- ^ Transit Relay URL
+    -- ^ Transit Relay URL
   , appId :: MagicWormhole.AppID
-  -- ^ Application ID string
+    -- ^ Application ID string
   , useTor :: Bool
-  -- ^ Whether to use Tor for all network communication
+    -- ^ Whether to use Tor for all network communication
   } deriving (Eq, Show)
 
 -- | Commands
