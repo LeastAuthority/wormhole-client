@@ -21,6 +21,8 @@ data Options
   -- ^ Rendezvous server websocket endpoint URL
   , transitUrl :: RelayEndpoint
   -- ^ Transit Relay URL
+  , appId :: MagicWormhole.AppID
+  -- ^ Application ID string
   , useTor :: Bool
   -- ^ Whether to use Tor for all network communication
   } deriving (Eq, Show)

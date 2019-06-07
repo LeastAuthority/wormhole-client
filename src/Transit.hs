@@ -37,6 +37,7 @@ module Transit
   , Errors.Error(..)
   , FileTransfer.MessageType(..)
   , MagicWormhole.parseWebSocketEndpoint
+  , MagicWormhole.AppID(..)
   , Network.parseTransitRelayUri
   )
 where

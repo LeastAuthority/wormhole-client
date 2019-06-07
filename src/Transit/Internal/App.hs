@@ -36,20 +36,17 @@ import Transit.Internal.Network (connectToTor)
 
 -- | Magic Wormhole transit app environment
 data Env
-  = Env { appID :: MagicWormhole.AppID
-        -- ^ Application specific ID
-        , side :: MagicWormhole.Side
+  = Env { side :: MagicWormhole.Side
         -- ^ random 5-byte bytestring
         , config :: Options
         -- ^ configuration like relay and transit url
         }
 
 -- | Create an 'Env', given the AppID and 'Options'
-prepareAppEnv :: Text -> Options -> IO Env
-prepareAppEnv appid options = do
+prepareAppEnv :: Options -> IO Env
+prepareAppEnv options = do
   side' <- MagicWormhole.generateSide
-  let appID' = MagicWormhole.AppID appid
-  return $ Env appID' side' options
+  return $ Env side' options
 
 allocateCode :: [(Word8, EvenWord, OddWord)] -> IO Text
 allocateCode wordlist = do
@@ -157,7 +154,7 @@ send session code tfd = do
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
   let options = config env
-  let appid = appID env
+  let appid = appId options
   let transitserver = transitUrl options
   let tor = useTor options
   nameplate <- liftIO $ MagicWormhole.allocate session
@@ -187,7 +184,7 @@ receive session code = do
   -- establish the connection
   let options = config env
   let tor = useTor options
-  let appid = appID env
+  let appid = appId options
   let transitserver = transitUrl options
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
@@ -229,6 +226,7 @@ app :: App ()
 app = do
   env <- ask
   let options = config env
+      appid = appId options
       endpoint = relayEndpoint options
   sock <- if useTor options
           then do
@@ -240,10 +238,10 @@ app = do
     Right sock' -> do
       case cmd options of
         Send tfd ->
-          liftIO (MagicWormhole.runClient endpoint (appID env) (side env) sock' $ \session ->
+          liftIO (MagicWormhole.runClient endpoint appid (side env) sock' $ \session ->
                      runApp (sendSession tfd session) env) >>= liftEither
         Receive maybeCode ->
-          liftIO (MagicWormhole.runClient endpoint (appID env) (side env) sock' $ \session ->
+          liftIO (MagicWormhole.runClient endpoint appid (side env) sock' $ \session ->
                      runApp (receiveSession maybeCode session) env) >>= liftEither
     Left e -> liftEither (Left e)
   where

@@ -24,6 +24,7 @@ where
 import Protolude
 
 import qualified Options.Applicative as Opt
+import Data.String (String)
 
 import qualified Transit
 
@@ -43,6 +44,12 @@ optionsParser
       Opt.help "Transit relay to use" <>
       Opt.value defaultTransitUrl <>
       Opt.showDefault )
+    <*> Opt.option
+    (Opt.maybeReader parseAppId)
+    ( Opt.long "appid" <>
+      Opt.help "appid to use" <>
+      Opt.value defaultAppId <>
+      Opt.showDefault )
     <*> Opt.switch
     ( Opt.long "tor" <>
       Opt.help "use Tor" )
@@ -55,6 +62,12 @@ optionsParser
     --
     -- This is a Transit relay run by Brian Warner.
     defaultTransitUrl = fromMaybe (panic "Invalid transit relay URL") (Transit.parseTransitRelayUri "tcp:transit.magic-wormhole.io:4001")
+    -- | Default App ID
+    --
+    -- This is the APPID for the `wormhole` file transfer application
+    defaultAppId = Transit.AppID "lothar.com/wormhole/text-or-file-xfer"
+    parseAppId :: String -> Maybe Transit.AppID
+    parseAppId appid = Just (Transit.AppID (toS appid))
 
 commandParser :: Opt.Parser Transit.Command
 commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
