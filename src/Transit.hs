@@ -32,11 +32,13 @@ module Transit
   , App.runApp
   , App.send
   , App.receive
-  , Conf.Options(..)
+  , Conf.Cmdline(..)
   , Conf.Command(..)
+  , Conf.Options(..)
   , Errors.Error(..)
   , FileTransfer.MessageType(..)
   , MagicWormhole.parseWebSocketEndpoint
+  , MagicWormhole.AppID(..)
   , Network.parseTransitRelayUri
   )
 where

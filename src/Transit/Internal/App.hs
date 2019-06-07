@@ -28,7 +28,7 @@ import Control.Monad.Except (liftEither)
 import Data.Text.PgpWordlist.Internal.Words (wordList)
 import Data.Text.PgpWordlist.Internal.Types (EvenWord(..), OddWord(..))
 
-import Transit.Internal.Conf (Options(..), Command(..))
+import Transit.Internal.Conf (Cmdline(..), Command(..), Options(..))
 import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
@@ -36,20 +36,17 @@ import Transit.Internal.Network (connectToTor)
 
 -- | Magic Wormhole transit app environment
 data Env
-  = Env { appID :: MagicWormhole.AppID
-        -- ^ Application specific ID
-        , side :: MagicWormhole.Side
+  = Env { side :: MagicWormhole.Side
         -- ^ random 5-byte bytestring
-        , config :: Options
+        , config :: Cmdline
         -- ^ configuration like relay and transit url
         }
 
--- | Create an 'Env', given the AppID and 'Options'
-prepareAppEnv :: Text -> Options -> IO Env
-prepareAppEnv appid options = do
+-- | Create an 'Env', given the AppID and 'Cmdline'
+prepareAppEnv :: Cmdline -> IO Env
+prepareAppEnv cmdlineOptions = do
   side' <- MagicWormhole.generateSide
-  let appID' = MagicWormhole.AppID appid
-  return $ Env appID' side' options
+  return $ Env side' cmdlineOptions
 
 allocateCode :: [(Word8, EvenWord, OddWord)] -> IO Text
 allocateCode wordlist = do
@@ -151,15 +148,15 @@ transitPurpose (MagicWormhole.AppID appid) = toS appid <> "/transit-key"
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-send :: MagicWormhole.Session -> Text -> MessageType -> App ()
-send session code tfd = do
+send :: MagicWormhole.Session -> Text -> MessageType -> Bool -> App ()
+send session code tfd useTor = do
   env <- ask
   -- first establish a wormhole session with the receiver and
   -- then talk the filetransfer protocol over it as follows.
-  let options = config env
-  let appid = appID env
-  let transitserver = transitUrl options
-  let tor = useTor options
+  let cmdlineOptions = config env
+  let args = options cmdlineOptions
+  let appid = appId args
+  let transitserver = transitUrl args
   nameplate <- liftIO $ MagicWormhole.allocate session
   mailbox <- liftIO $ MagicWormhole.claim session nameplate
   peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
@@ -176,19 +173,19 @@ send session code tfd = do
             first NetworkError <$> receiveMessageAck conn
           TFile filepath -> do
             let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-            sendFile conn transitserver transitKey filepath tor
+            sendFile conn transitserver transitKey filepath useTor
     )
   liftEither result
 
 -- | receive a text message or file from the wormhole peer.
-receive :: MagicWormhole.Session -> Text -> App ()
-receive session code = do
+receive :: MagicWormhole.Session -> Text -> Bool -> App ()
+receive session code useTor = do
   env <- ask
   -- establish the connection
-  let options = config env
-  let tor = useTor options
-  let appid = appID env
-  let transitserver = transitUrl options
+  let cmdlineOptions = config env
+  let args = options cmdlineOptions
+  let appid = appId args
+  let transitserver = transitUrl args
   let codeSplit = Text.split (=='-') code
   let (Just nameplate) = headMay codeSplit
   mailbox <- liftIO $ MagicWormhole.claim session (MagicWormhole.Nameplate nameplate)
@@ -218,7 +215,7 @@ receive session code = do
               Left e -> return $ Left (NetworkError e)
               Right transitMsg -> do
                 let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-                receiveFile conn transitserver transitKey transitMsg tor
+                receiveFile conn transitserver transitKey transitMsg useTor
     )
   liftEither result
 
@@ -228,31 +225,38 @@ receive session code = do
 app :: App ()
 app = do
   env <- ask
-  let options = config env
-      endpoint = relayEndpoint options
-  sock <- if useTor options
-          then do
-            res <- liftIO $ connectToTor endpoint
-            return $ bimap NetworkError Just res
-          else
-            return (Right Nothing)
-  case sock of
-    Right sock' -> do
-      case cmd options of
-        Send tfd ->
-          liftIO (MagicWormhole.runClient endpoint (appID env) (side env) sock' $ \session ->
-                     runApp (sendSession tfd session) env) >>= liftEither
-        Receive maybeCode ->
-          liftIO (MagicWormhole.runClient endpoint (appID env) (side env) sock' $ \session ->
-                     runApp (receiveSession maybeCode session) env) >>= liftEither
-    Left e -> liftEither (Left e)
+  let cmdlineOptions = config env
+      args = options cmdlineOptions
+      appid = appId args
+      endpoint = relayEndpoint args
+      command = cmd cmdlineOptions
+  case command of
+    Send tfd useTor -> do
+      maybeSock <- maybeGetConnectionSocket endpoint useTor
+      case maybeSock of
+        Right sock' ->
+          liftIO (MagicWormhole.runClient endpoint appid (side env) sock' $ \session ->
+                     runApp (sendSession tfd session useTor) env) >>= liftEither
+        Left e -> liftEither (Left e)
+    Receive maybeCode useTor -> do
+      maybeSock <- maybeGetConnectionSocket endpoint useTor
+      case maybeSock of
+        Right sock' ->
+          liftIO (MagicWormhole.runClient endpoint appid (side env) sock' $ \session ->
+                     runApp (receiveSession maybeCode session useTor) env) >>= liftEither
+        Left e -> liftEither (Left e)
   where
     getWormholeCode :: MagicWormhole.Session -> Maybe Text -> IO Text
     getWormholeCode session Nothing = getCode session wordList
     getWormholeCode _ (Just code) = return code
-    sendSession offerMsg session = do
+    sendSession offerMsg session useTor = do
       code <- liftIO $ allocateCode wordList
-      send session (toS code) offerMsg
-    receiveSession maybeCode session = do
+      send session (toS code) offerMsg useTor
+    receiveSession maybeCode session useTor = do
       code <- liftIO $ getWormholeCode session maybeCode
-      receive session code
+      receive session code useTor
+    maybeGetConnectionSocket endpoint useTor | useTor == True = do
+                                                 res <- liftIO $ connectToTor endpoint
+                                                 return $ bimap NetworkError Just res
+                                             | otherwise = return (Right Nothing)
+                                               
