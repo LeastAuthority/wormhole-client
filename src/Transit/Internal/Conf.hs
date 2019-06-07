@@ -30,14 +30,14 @@ data Options
     -- ^ Transit Relay URL
   , appId :: MagicWormhole.AppID
     -- ^ Application ID string
-  , useTor :: Bool
-    -- ^ Whether to use Tor for all network communication
+  -- , useTor :: Bool
+  --   -- ^ Whether to use Tor for all network communication
   } deriving (Eq, Show)
 
 -- | Commands
 data Command
-  = Send MessageType
-  -- ^ Send a file, directory or a text message
-  | Receive (Maybe Text)
-  -- ^ Receive a file, directory or a text message
+  = Send MessageType Bool
+  -- ^ Send a file, directory or a text message, optionally via tor
+  | Receive (Maybe Text) Bool
+  -- ^ Receive a file, directory or a text message, optionally via tor
   deriving (Eq, Show)

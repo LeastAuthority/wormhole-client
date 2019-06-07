@@ -40,13 +40,15 @@ commandParser = Opt.hsubparser (sendCommand <> receiveCommand)
     sendCommand = Opt.command "send" (Opt.info sendOptions (Opt.progDesc "send a text message, a file or a directory"))
     receiveCommand = Opt.command "receive" (Opt.info receiveOptions (Opt.progDesc "receive a text message"))
     receiveOptions :: Opt.Parser Transit.Command
-    receiveOptions = Transit.Receive <$> optional (Opt.strArgument (Opt.metavar "CODE"))
+    receiveOptions = Transit.Receive <$> optional (Opt.strArgument (Opt.metavar "CODE")) <*> torOptParser
     sendOptions :: Opt.Parser Transit.Command
-    sendOptions = Transit.Send <$> parseMessageType
+    sendOptions = Transit.Send <$> parseMessageType <*> torOptParser
     parseMessageType :: Opt.Parser Transit.MessageType
     parseMessageType = msgParser <|> fileOrDirParser
     msgParser :: Opt.Parser Transit.MessageType
     msgParser = Transit.TMsg <$> Opt.strOption (Opt.long "text" <> Opt.help "Text message to send")
+    torOptParser :: Opt.Parser Bool
+    torOptParser = Opt.switch (Opt.long "tor" <> Opt.help "use Tor when connecting")
     fileOrDirParser :: Opt.Parser Transit.MessageType
     fileOrDirParser = Transit.TFile <$> Opt.strArgument (Opt.metavar "FILENAME" <> Opt.help "file path")
 
@@ -71,9 +73,9 @@ optionsParser
       Opt.help "appid to use" <>
       Opt.value defaultAppId <>
       Opt.showDefault )
-    <*> Opt.switch
-    ( Opt.long "tor" <>
-      Opt.help "use Tor" )
+    -- <*> Opt.switch
+    -- ( Opt.long "tor" <>
+    --   Opt.help "use Tor" )
   where
     -- | Default URL for relay server.
     --
