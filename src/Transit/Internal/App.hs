@@ -89,11 +89,9 @@ completeWord completionConfig = HC.completeWord Nothing "" completionFunc
     completionFunc word = do
       let (completed, partial) = Text.breakOnEnd "-" (toS word)
           hypenCount = Text.count "-" completed
-          wordlist = if hypenCount == 0
-                        then nameplates completionConfig
-                        else if odd hypenCount
-                                then oddWords completionConfig
-                                else evenWords completionConfig
+          wordlist | hypenCount == 0 = nameplates completionConfig
+                   | odd hypenCount = oddWords completionConfig
+                   | otherwise = evenWords completionConfig
           suffix = if hypenCount < numWords completionConfig
                       then "-"
                       else ""
