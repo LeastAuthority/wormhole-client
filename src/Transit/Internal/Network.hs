@@ -67,6 +67,7 @@ import Network.Info
 
 import Network.Socket.ByteString (send, recv)
 import System.Timeout (timeout)
+import Control.Concurrent.Async (mapConcurrently)
 import Data.Text (splitOn)
 import Data.String (String)
 import System.IO.Error (IOError)
@@ -234,15 +235,14 @@ startServer sock' = do
 startClient :: [ConnectionHint] -> IO (Either CommunicationError TCPEndpoint)
 startClient hs = do
   let sortedHs = sort hs
-  maybeEndPoint <- case segregateHints sortedHs of
-                     ([], []) -> return Nothing
-                     ([], rHs) -> asum (map (tryToConnect RelayV1) rHs)
-                     (dHs, []) -> asum (map (tryToConnect DirectTcpV1) dHs)
-                     (dHs, rHs) -> do
-                       (ep1, ep2) <- concurrently
-                                     (asum (map (tryToConnect DirectTcpV1) dHs))
-                                     (asum (map (tryToConnect RelayV1) rHs))
-                       return $ ep1 <|> ep2
+      (dHs, rHs) = segregateHints sortedHs
+  maybeEndPoint <- do
+    (ep1s, ep2s) <- concurrently
+                    (mapConcurrently (tryToConnect DirectTcpV1) dHs)
+                    (mapConcurrently (tryToConnect RelayV1) rHs)
+    let ep1 = asum ep1s
+        ep2 = asum ep2s
+    return $ ep1 <|> ep2
   case maybeEndPoint of
     Just ep -> return (Right ep)
     Nothing -> return (Left (ConnectionError "Peer socket is not active"))
