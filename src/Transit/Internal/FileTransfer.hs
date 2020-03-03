@@ -140,7 +140,7 @@ sendFile conn transitserver transitKey filepath useTor = do
       offerResp <- senderOfferExchange conn filepath
       case offerResp of
         Left s -> return (Left (NetworkError (OfferError s)))
-        Right _ -> do
+        Right filepath' -> do
           -- establish a transit connection
           endpoint <- establishTransit Send transitserver transitKey transit sock'
           case endpoint of
@@ -149,7 +149,7 @@ sendFile conn transitserver transitKey filepath useTor = do
               (rxAckMsg, txSha256Hash) <-
                 finally
                 (do -- send encrypted records to the peer
-                    (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath ep)
+                    (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath' ep)
                     -- read a record that should contain the transit Ack.
                     -- If ack is not ok or the sha256sum is incorrect, flag an error.
                     rxAckMsg <- receiveAckMessage ep
