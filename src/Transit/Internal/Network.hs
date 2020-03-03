@@ -164,7 +164,7 @@ buildRelayHints (RelayEndpoint host' port') =
   Set.singleton $ Relay RelayV1 [Hint { hostname = host'
                                       , port = port'
                                       , priority = 0.0
-                                      , ctype = RelayV1 }]
+                                      , ctype = DirectTcpV1 }]
 
 -- | Build a client's connection hint
 buildHints :: Maybe PortNumber -> RelayEndpoint -> IO (Set.Set ConnectionHint)
