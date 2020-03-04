@@ -358,16 +358,16 @@ type DirState = (Int, FileOffset)
 -- zip file and a state (number of files and total size of all
 -- the files).
 zipDir :: FilePath -> IO (FilePath, DirState)
-zipDir filePath = do
+zipDir dirPath = do
   systemTmpDir <- getTemporaryDirectory
   tmpDir <- createTempDirectory systemTmpDir "wormhole"
-  let dirName = takeBaseName (dropTrailingPathSeparator filePath)
+  let dirName = takeBaseName (dropTrailingPathSeparator dirPath)
   let zipFileName = tmpDir </> dirName <.> "zip"
   ((_, stats), _) <- concurrently
-                     (runStateT (dirStats filePath) (0,0))
+                     (runStateT (dirStats dirPath) (0,0))
                      (do
                          createArchive zipFileName $
-                           packDirRecur Deflate mkEntrySelector filePath
+                           packDirRecur Deflate mkEntrySelector dirPath
                          withArchive zipFileName $ do
                            forEntries $ \selector -> do
                              mode <- liftIO $ getFileMode (dirName </> unEntrySelector selector)
