@@ -126,8 +126,8 @@ establishTransit _ _ _ _ _ = return $ Left (NetworkError (UnknownPeerMessage "Co
 -- the wormhole securely. The receiver, on successfully receiving the file, would compute
 -- a sha256 sum of the encrypted file and sends it across to the sender, along with an
 -- acknowledgement, which the sender can verify.
-sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> SecretBox.Key -> FilePath -> Bool -> IO (Either Error ())
-sendFile conn transitserver transitKey filepath useTor = do
+sendFile :: MagicWormhole.EncryptedConnection -> RelayEndpoint -> SecretBox.Key -> FilePath -> Bool -> FilePath -> IO (Either Error ())
+sendFile conn transitserver transitKey filepath useTor tmpDirPath = do
     -- exchange abilities
   sock' <- tcpListener useTor
   portnum <- getSocketPort sock'
@@ -137,7 +137,7 @@ sendFile conn transitserver transitKey filepath useTor = do
     Left s -> return $ Left (NetworkError s)
     Right transit -> do
       -- send offer for the file
-      offerResp <- senderOfferExchange conn filepath
+      offerResp <- senderOfferExchange conn filepath tmpDirPath
       case offerResp of
         Left s -> return (Left (NetworkError (OfferError s)))
         Right filepath' -> do

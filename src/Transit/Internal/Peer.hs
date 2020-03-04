@@ -48,8 +48,7 @@ import Crypto.Random (MonadRandom(..))
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 import System.Directory.PathWalk (pathWalk)
-import System.Directory (getTemporaryDirectory)
-import System.IO.Temp (createTempDirectory)
+import System.Directory (copyFile)
 import Codec.Archive.Zip ( createArchive
                          , withArchive
                          , CompressionMethod ( Deflate )
@@ -197,8 +196,8 @@ sendMessageAck conn msg = do
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode ackMessage)))
 
 -- | Exchange offer message with the peer over the wormhole connection
-senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> IO (Either Text FilePath)
-senderOfferExchange conn path = do
+senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> FilePath -> IO (Either Text FilePath)
+senderOfferExchange conn path tmpDir = do
   (filePath, rx) <- concurrently sendFileOrDirOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
@@ -222,12 +221,17 @@ senderOfferExchange conn path = do
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
     sendFileOffer = do
-      size <- getFileSize path
-      let fileOffer = MagicWormhole.File (toS (takeFileName path)) size
+      -- copy given file into a temporary directory
+      let fileName = takeFileName path
+          newFilePath = tmpDir </> fileName
+      copyFile path newFilePath
+      -- create File Offer and send it.
+      size <- getFileSize newFilePath
+      let fileOffer = MagicWormhole.File (toS fileName) size
       sendOffer conn fileOffer
-      return path
+      return newFilePath
     sendDirOffer = do
-      (zipFilePath, (totalFiles, totalSize)) <- zipDir path
+      (zipFilePath, (totalFiles, totalSize)) <- zipDir path tmpDir
       size <- getFileSize zipFilePath
       let dirOffer = MagicWormhole.Directory MagicWormhole.ZipFileDeflated (toS (takeBaseName (dropTrailingPathSeparator path))) (fromIntegral size) (fromIntegral totalSize) (fromIntegral totalFiles)
       sendOffer conn dirOffer
@@ -357,10 +361,8 @@ type DirState = (Int, FileOffset)
 -- the entire directory contents and return the path to the
 -- zip file and a state (number of files and total size of all
 -- the files).
-zipDir :: FilePath -> IO (FilePath, DirState)
-zipDir dirPath = do
-  systemTmpDir <- getTemporaryDirectory
-  tmpDir <- createTempDirectory systemTmpDir "wormhole"
+zipDir :: FilePath -> FilePath -> IO (FilePath, DirState)
+zipDir dirPath tmpDir = do
   let dirName = takeBaseName (dropTrailingPathSeparator dirPath)
   let zipFileName = tmpDir </> dirName <.> "zip"
   ((_, stats), _) <- concurrently
