@@ -27,6 +27,8 @@ import Control.Monad.Trans.Except (ExceptT(..))
 import Control.Monad.Except (liftEither)
 import Data.Text.PgpWordlist.Internal.Words (wordList)
 import Data.Text.PgpWordlist.Internal.Types (EvenWord(..), OddWord(..))
+import System.Directory (getTemporaryDirectory, removeDirectoryRecursive)
+import System.IO.Temp (createTempDirectory)
 
 import Transit.Internal.Conf (Cmdline(..), Command(..), Options(..))
 import Transit.Internal.Errors (Error(..), CommunicationError(..))
@@ -171,9 +173,17 @@ send session code tfd useTor = do
             sendOffer conn offer
             -- wait for "answer" message with "message_ack" key
             first NetworkError <$> receiveMessageAck conn
-          TFile filepath -> do
+          TFile fileOrDirpath -> do
             let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-            sendFile conn transitserver transitKey filepath useTor
+            bracket
+              -- acquire resource
+              (do
+                  systemTmpDir <- getTemporaryDirectory
+                  createTempDirectory systemTmpDir "wormhole")
+              -- release resource
+              removeDirectoryRecursive
+              -- do the computation in between: send the file
+              (sendFile conn transitserver transitKey fileOrDirpath useTor)
     )
   liftEither result
 
