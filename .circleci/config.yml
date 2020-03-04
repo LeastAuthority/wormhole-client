@@ -24,12 +24,12 @@ jobs:
           name: "Install Cabal"
           command: |
             apt-get --quiet update
-            apt-get --quiet --yes install cabal-install zlib1g zlib1g-dev
+            apt-get --quiet --yes install cabal-install
 
       - run:
           name: "install dependencies"
           command: |
-             apt-get --quiet --yes install git pkg-config libsodium-dev libbz2-dev
+             apt-get --quiet --yes install git pkg-config libsodium-dev libbz2-dev zlib1g-dev
 
       - restore_cache:
           keys:
@@ -40,7 +40,7 @@ jobs:
           command: |
              cabal update
              cabal install alex happy
-             cabal install cabal-install-2.4.1.0
+             cabal install cabal-install-3.0.0.0
 
       - save_cache:
           key: buildtools
@@ -50,14 +50,14 @@ jobs:
       - run:
           name: "Build"
           command: |
-            cabal new-update
-            cabal new-configure --enable-tests
-            cabal new-build all
+            cabal update
+            cabal configure --enable-tests
+            cabal build all
 
       - run:
           name: "Test"
           command: |
             export LC_ALL=C.UTF-8
-            cabal new-configure --enable-tests
-            cabal new-test
+            cabal configure --enable-tests
+            cabal test
 
