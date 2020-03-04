@@ -370,7 +370,7 @@ zipDir dirPath = do
                            packDirRecur Deflate mkEntrySelector dirPath
                          withArchive zipFileName $ do
                            forEntries $ \selector -> do
-                             mode <- liftIO $ getFileMode (dirName </> unEntrySelector selector)
+                             mode <- liftIO $ getFileMode (dirPath </> unEntrySelector selector)
                              setExternalFileAttrs (fromIntegral (mode `shiftL` 16)) selector)
   return (zipFileName, stats)
     where
