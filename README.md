@@ -7,7 +7,9 @@ transfer program (also called `wormhole`) that uses the SPAKE2 based wormhole
 protocol. Magic-wormhole allows the user to securely transfer a file from
 one computer to another, anywhere in the world. This program interoperates
 with the Python implementation of magic-wormhole program. We support transferring
-short text messages, files and directories.
+short text messages, files and directories. If the user has `tor` or `Tor Browser`
+installed, then magic-wormhole can be instructed to use the tor connection in order
+to protect the IP/Port addresses of the users.
 
 ## Building
 
@@ -46,7 +48,7 @@ We welcome all kinds of contributions (bug fixes, new features, documentation, t
 
 ## What's next?
 
-Adding support for sending via Tor connections is the next important task.
+Support "dilated wormholes" when it becomes available in the upstream.
 
 ## Feedback
 
