@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 -- | Description: Conduit pipelines for sending and receiving files and directories
 module Transit.Internal.Pipeline
   ( sendPipeline
@@ -86,8 +87,8 @@ decryptC key = loop Saltine.zero
         Just bs ->
           case decrypt key (CipherText bs) of
             Right (PlainText plainText, nonce) -> do
-              let seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
-                  seqNum' = Saltine.decode (toS seqNumLE)
+              let !seqNumLE = BS.reverse $ toS $ Saltine.encode seqNum
+                  !seqNum' = Saltine.decode (toS seqNumLE)
               if Just nonce /= seqNum'
                 then throwIO (BadNonce "nonce decoding failed or packets received out of order.")
                 else do
@@ -124,13 +125,13 @@ assembleRecordC = do
     getChunk :: Monad m => Int -> C.ConduitT ByteString ByteString m ByteString
     getChunk size = go size BB.empty
     go :: Monad m => Int -> BB.Builder -> C.ConduitT ByteString ByteString m ByteString
-    go size res = do
-      let residue = BL.toStrict . BB.toLazyByteString $ res
+    go !size !res = do
+      let !residue = BL.toStrict . BB.toLazyByteString $ res
       b <- C.await
       case b of
         Nothing -> return residue
         Just bs | size < BS.length bs -> do
-                    let (f, l) = BS.splitAt size bs
+                    let (!f, !l) = BS.splitAt size bs
                     C.leftover l
                     return $ residue <> f
                 | size == BS.length bs -> return (residue <> bs)
