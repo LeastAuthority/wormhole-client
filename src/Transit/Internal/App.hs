@@ -24,7 +24,6 @@ import qualified Crypto.Spake2 as Spake2
 import System.IO.Error (IOError)
 import System.Random (randomR, getStdGen)
 import Data.String (String)
-import Control.Monad.Trans.Except (ExceptT(..))
 import Control.Monad.Except (liftEither)
 import Data.Text.PgpWordlist.Internal.Words (wordList)
 import Data.Text.PgpWordlist.Internal.Types (EvenWord(..), OddWord(..))
