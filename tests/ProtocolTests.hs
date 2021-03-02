@@ -3,7 +3,8 @@ module ProtocolTests
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 import Test.Hspec
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Data.ByteString as BS

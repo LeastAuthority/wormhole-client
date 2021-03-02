@@ -3,7 +3,8 @@ module PipelineTests
   )
 where
 
-import Protolude hiding (putByteString, Selector)
+import Protolude hiding (putByteString, Selector, toS)
+import Protolude.Conv (toS)
 
 import Test.Hspec
 import Conduit ((.|))
