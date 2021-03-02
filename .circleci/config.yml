@@ -38,6 +38,7 @@ jobs:
       - run:
           name: "install newer version of cabal-install"
           command: |
+             cabal user-config update
              cabal update
              cabal install alex happy
              cabal install cabal-install-3.2.0.0
@@ -50,6 +51,7 @@ jobs:
       - run:
           name: "Build"
           command: |
+            cabal user-config update
             cabal update
             cabal new-configure --enable-tests
             cabal new-build all
