@@ -28,7 +28,8 @@ module Transit.Internal.Network
   ) where
 
 import Prelude (read)
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 
 import Transit.Internal.Messages (ConnectionHint(..), Hint(..), AbilityV1(..))
 

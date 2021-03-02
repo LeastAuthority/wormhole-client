@@ -10,7 +10,8 @@ module Transit.Internal.Crypto
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 
 import qualified Control.Exception as E
 import qualified Data.ByteString as BS

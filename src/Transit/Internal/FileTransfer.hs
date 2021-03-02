@@ -8,7 +8,8 @@ module Transit.Internal.FileTransfer
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 
 import qualified Data.Aeson as Aeson
 import qualified Conduit as C

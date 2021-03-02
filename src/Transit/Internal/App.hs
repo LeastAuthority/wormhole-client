@@ -11,7 +11,8 @@ module Transit.Internal.App
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TIO

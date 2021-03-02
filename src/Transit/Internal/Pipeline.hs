@@ -9,7 +9,8 @@ module Transit.Internal.Pipeline
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 
 import Crypto.Hash (SHA256(..))
 import Data.Conduit ((.|))
