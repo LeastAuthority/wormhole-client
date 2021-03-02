@@ -40,7 +40,7 @@ jobs:
           command: |
              cabal update
              cabal install alex happy
-             cabal install cabal-install-3.0.0.0
+             cabal install cabal-install-3.2.0.0
 
       - save_cache:
           key: buildtools
@@ -51,8 +51,8 @@ jobs:
           name: "Build"
           command: |
             cabal update
-            cabal configure --enable-tests
-            cabal build all
+            cabal new-configure --enable-tests
+            cabal new-build all
 
       - run:
           name: "Test"
