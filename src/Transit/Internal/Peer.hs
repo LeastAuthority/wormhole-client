@@ -27,7 +27,8 @@ module Transit.Internal.Peer
   )
 where
 
-import Protolude hiding ((<.>))
+import Protolude hiding ((<.>), toS, toLower)
+import Protolude.Conv (toS)
 
 import qualified Control.Exception as E
 import qualified Crypto.Saltine.Class as Saltine

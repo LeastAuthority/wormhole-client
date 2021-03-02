@@ -5,7 +5,8 @@ module MessagesTests
   )
 where
 
-import Protolude
+import Protolude hiding (toS)
+import Protolude.Conv (toS)
 
 import qualified Data.Set as Set
 
@@ -38,7 +39,7 @@ tests = hspec $ do
                     , priority = 0.5
                     , hostname = "foo.bar.baz"
                     , port = 1234 }
-      encode h1 `shouldBe` "{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}"
+      encode h1 `shouldBe` "{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"port\":1234,\"type\":\"direct-tcp-v1\"}"
     it "decode Hint" $ do
       let h1 = "{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}" :: Text
       decode (toS h1) `shouldBe` Just Hint { ctype = DirectTcpV1
@@ -52,7 +53,7 @@ tests = hspec $ do
                     , hostname = "foo.bar.baz"
                     , port = 1234 }
           ch1 = Direct h1
-      encode ch1 `shouldBe` "{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}"
+      encode ch1 `shouldBe` "{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"port\":1234,\"type\":\"direct-tcp-v1\"}"
     it "encode Relay ConnectionHint" $ do
       let h1 = Hint { ctype = DirectTcpV1
                     , priority = 0.5
@@ -60,7 +61,7 @@ tests = hspec $ do
                     , port = 1234 }
           ch1 = Relay { rtype = RelayV1
                       , hints = [h1] }
-      encode ch1 `shouldBe` "{\"hints\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}],\"type\":\"relay-v1\"}"
+      encode ch1 `shouldBe` "{\"hints\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"port\":1234,\"type\":\"direct-tcp-v1\"}],\"type\":\"relay-v1\"}"
     it "decode Direct ConnectionHint" $ do
       let h1text = "{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}" :: Text
       decode (toS h1text) `shouldBe`  Just (Direct Hint { ctype = DirectTcpV1
@@ -103,7 +104,7 @@ tests = hspec $ do
                       , hints = [h4] }
           t2 = Transit { abilitiesV1 = [Ability DirectTcpV1, Ability RelayV1]
                        , hintsV1 = Set.fromList [ch3 ,ch4] }
-          t1text = "{\"transit\":{\"hints-v1\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234},{\"hints\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"type\":\"direct-tcp-v1\",\"port\":1234}],\"type\":\"relay-v1\"}],\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"},{\"type\":\"relay-v1\"}]}}" :: Text
+          t1text = "{\"transit\":{\"abilities-v1\":[{\"type\":\"direct-tcp-v1\"},{\"type\":\"relay-v1\"}],\"hints-v1\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"port\":1234,\"type\":\"direct-tcp-v1\"},{\"hints\":[{\"hostname\":\"foo.bar.baz\",\"priority\":0.5,\"port\":1234,\"type\":\"direct-tcp-v1\"}],\"type\":\"relay-v1\"}]}}" :: Text
           t2text = "{\"transit\": {\"abilities-v1\": [{\"type\": \"direct-tcp-v1\"}, {\"type\": \"relay-v1\"}], \"hints-v1\": [{\"priority\": 0.0, \"hostname\": \"192.168.1.106\", \"type\": \"direct-tcp-v1\", \"port\": 36097}, {\"type\": \"relay-v1\", \"hints\": [{\"priority\": 0.0, \"hostname\": \"transit.magic-wormhole.io\", \"type\": \"direct-tcp-v1\", \"port\": 4001}]}]}}" :: ByteString
       encode t1 `shouldBe` toS t1text
       decode (encode t1) `shouldBe` Just t1
