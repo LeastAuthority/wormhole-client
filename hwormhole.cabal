@@ -43,18 +43,18 @@ library
                      , directory       >= 1.3     && < 2.0
                      , filepath        >= 1.4.0   && < 2.0
                      , haskeline       >= 0.7.4   && < 1.0
-                     , magic-wormhole  >= 0.3.3   && < 1.0
+                     , magic-wormhole  >= 0.3.4   && < 1.0
                      , memory          >= 0.14.15 && < 1.0
                      , mtl             >= 2.2.2   && < 3.0
                      , network         >= 3.0     && < 4
                      , network-info    >= 0.2.0   && < 1.0
                      , pathwalk        >= 0.3.1.2 && < 1.0
                      , pgp-wordlist    >= 0.1.0.2 && < 1.0
-                     , protolude       >= 0.2.1   && < 1.0
+                     , protolude       >= 0.3.0   && < 0.4
                      , random          >= 1.1     && < 2.0
                      , saltine         == 0.1.0.1 && < 1.0
                      , socks           >= 0.5.6   && < 1.0
-                     , spake2          >= 0.4     && < 1.0
+                     , spake2          >= 0.4.3   && < 1.0
                      , temporary       >= 1.3     && < 2.0
                      , text            >= 1.2.1   && < 2.0
                      , transformers    >= 0.5.5   && < 1.0
@@ -74,7 +74,7 @@ executable hwormhole-exe
                      , binary
                      , hwormhole
                      , optparse-applicative
-                     , protolude
+                     , protolude       >= 0.3.0   && <0.4
                      , text
                      , transformers
   hs-source-dirs:      cmd
@@ -98,12 +98,12 @@ test-suite hwormhole-tests
                     , binary-conduit
                     , conduit-extra
                     , text
-                    , protolude
+                    , protolude       >= 0.3.0   && <0.4
                     , hspec
                     , saltine
                     , hwormhole
                     , magic-wormhole
-                    , hedgehog         >= 0.6     && <1
+                    , hedgehog         >= 1.0.0   && <2
   other-modules:      ProtocolTests
                     , MessagesTests
                     , PipelineTests
