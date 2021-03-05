@@ -193,22 +193,25 @@ data TransitEndpoint
 
 
 tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
-tryToConnect ability (Hint _ _ host portnum) =
-  timeout 1000000 (bracketOnError
-                    (init host portnum)
-                    (\(sock', _) -> close sock')
-                    (\(sock', addr) -> do
-                        connect sock' $ addrAddress addr
-                        return (TCPEndpoint sock' (Just ability))))
-  where
-    init host' port' = withSocketsDo $ do
-      addr <- resolve (toS host') (show port')
-      sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
-      return (sock', addr)
-    resolve host' port' = do
-      let hints' = defaultHints { addrSocketType = Stream }
-      addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
-      return addr
+tryToConnect ability hint@(Hint _ _ host portnum) = do
+  if host == ""
+    then return Nothing
+    else do
+    timeout 1000000 (bracketOnError
+                     (init host portnum)
+                     (\(sock', _) -> close sock')
+                     (\(sock', addr) -> do
+                         connect sock' $ addrAddress addr
+                         return (TCPEndpoint sock' (Just ability))))
+      where
+        init host' port' = withSocketsDo $ do
+          addr <- resolve (toS host') (show port')
+          sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+          return (sock', addr)
+        resolve host' port' = do
+          let hints' = defaultHints { addrSocketType = Stream }
+          addr:_ <- getAddrInfo (Just hints') (Just host') (Just port')
+          return addr
 
 -- | Low level function to send a fixed length bytestring to
 -- the peer represented by /ep/.
