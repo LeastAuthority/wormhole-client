@@ -193,7 +193,7 @@ data TransitEndpoint
 
 
 tryToConnect :: AbilityV1 -> Hint -> IO (Maybe TCPEndpoint)
-tryToConnect ability hint@(Hint _ _ host portnum) = do
+tryToConnect ability (Hint _ _ host portnum) = do
   if host == ""
     then return Nothing
     else do
