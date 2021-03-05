@@ -55,7 +55,7 @@ import Network.Socket
   , defaultPort
   , setSocketOption
   , SocketOption( ReuseAddr )
-  , AddrInfoFlag ( AI_NUMERICSERV )
+  , AddrInfoFlag ( AI_NUMERICHOST )
   , withSocketsDo
   , tupleToHostAddress
   )
@@ -97,7 +97,7 @@ data CommunicationError
 tcpListener :: Bool -> IO (Maybe Socket)
 tcpListener True = return Nothing
 tcpListener False = do
-  let hints' = defaultHints { addrFlags = [AI_NUMERICSERV], addrSocketType = Stream }
+  let hints' = defaultHints { addrFlags = [AI_NUMERICHOST], addrSocketType = Stream }
   addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show defaultPort))
   sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
   setSocketOption sock' ReuseAddr 1
