@@ -15,9 +15,9 @@
 *** via relay
 **** Send (DONE)
 **** Receive (DONE)
+** support for directory transfers via transit protocol. (DONE)
 ** Setup CI system (DONE)
 ** Integration tests with python app.
 ** Try to optimize the wordlist completion in receive (256*2 entry table instead of 256*256 entries)
-** support for directory transfers via transit protocol.
 ** error handling at the moment is terrible. This needs to be thought through and fixed.(ONGOING)
 ** review the exposed functions from wormhole library and see if they strictly need to be exposed.(ONGOING)
