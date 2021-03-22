@@ -21,3 +21,5 @@
 ** Try to optimize the wordlist completion in receive (256*2 entry table instead of 256*256 entries)
 ** error handling at the moment is terrible. This needs to be thought through and fixed.(ONGOING)
 ** review the exposed functions from wormhole library and see if they strictly need to be exposed.(ONGOING)
+** Add a switch for local-only transfers (and adjust priorities to always prioritize local transfers).
+** add `--verify' for send and recv commands to display verification strings.
