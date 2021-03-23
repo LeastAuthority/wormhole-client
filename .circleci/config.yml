@@ -38,10 +38,9 @@ jobs:
       - run:
           name: "install newer version of cabal-install"
           command: |
-             cabal user-config update
              cabal update
-             cabal install --overwrite-policy=always alex happy
-             cabal install --overwrite-policy=always cabal-install-3.0.0.0
+             cabal install alex happy
+             cabal install cabal-install-3.0.0.0
 
       - save_cache:
           key: buildtools
