@@ -82,7 +82,7 @@ data ConnectionHint
   deriving (Eq, Show, Generic)
 
 instance Ord ConnectionHint where
-  Direct _  `compare` Direct _  = EQ
+  Direct _  `compare` Direct _  = LT
   Direct _  `compare` Relay _ _ = LT
   Relay _ h1 `compare` Relay _ h2 = h1 `compare` h2
   Relay _ _ `compare` Direct _  = GT

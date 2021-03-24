@@ -42,6 +42,7 @@ import Network.Socket
   , addrFamily
   , getAddrInfo
   , SocketType ( Stream )
+  , Family ( AF_INET6 )
   , close
   , socket
   , socketPort
@@ -97,8 +98,11 @@ tcpListener :: Bool -> IO (Maybe Socket)
 tcpListener True = return Nothing
 tcpListener False = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICHOST], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show defaultPort))
-  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  -- getAddrInfo gives us a list of addresses. With AI_ADDRCONFIG, we
+  -- get one for IPv4 and another for IPv6
+  addr:_ <- getAddrInfo (Just hints') Nothing (Just (show defaultPort))
+  -- Always use AF_INET6 so that the socket listens on both IPv4 and IPv6
+  sock' <- socket AF_INET6 (addrSocketType addr) (addrProtocol addr)
   setSocketOption sock' ReuseAddr 1
   bind sock' (addrAddress addr)
   listen sock' 5
@@ -118,16 +122,17 @@ buildDirectHints portnum = do
                                   (show (ipv4 nwInterface) /= ("0.0.0.0" :: Text) ||
                                    show (ipv6 nwInterface) /= ("0:0:0:0:0:0:0:0" :: Text)))
           nwInterfaces
-  return $ Set.fromList $ concatMap (\nwInterface ->
-                                   [ Direct Hint { hostname = show (ipv4 nwInterface)
-                                                 , port = fromIntegral portnum
-                                                 , priority = 0
-                                                 , ctype = DirectTcpV1 }
-                                   , Direct Hint { hostname = show (ipv6 nwInterface)
-                                                 , port = fromIntegral portnum
-                                                 , priority = 0
-                                                 , ctype = DirectTcpV1 }
-                                   ]) nonLoopbackInterfaces
+      dhints = concatMap (\nwInterface ->
+                         [ Direct Hint { hostname = show (ipv4 nwInterface)
+                                       , port = fromIntegral portnum
+                                       , priority = 0
+                                       , ctype = DirectTcpV1 }
+                         , Direct Hint { hostname = show (ipv6 nwInterface)
+                                       , port = fromIntegral portnum
+                                       , priority = 0
+                                       , ctype = DirectTcpV1 }
+                         ]) nonLoopbackInterfaces
+  return $ Set.fromList $ dhints
 
 -- | Type representing a Relay Endpoint URL
 data RelayEndpoint
