@@ -63,7 +63,6 @@ import Network.Socket
 import Network.Info
   ( getNetworkInterfaces
   , NetworkInterface(..)
-  , IPv4(..)
   )
 
 import Network.Socket.ByteString (send, recv)
@@ -111,32 +110,24 @@ getSocketPort (Just sock') = do
   portnum <- socketPort sock'
   return (Just portnum)
 
-type Hostname = Text
-
-ipv4ToHostname :: Word32 -> Hostname
-ipv4ToHostname ip =
-  let (q1, r1) = ip `divMod` 256
-      (q2, r2) = q1 `divMod` 256
-      (q3, r3) = q2 `divMod` 256
-  in
-    show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
-
 buildDirectHints :: PortNumber -> IO (Set.Set ConnectionHint)
 buildDirectHints portnum = do
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
-        filter (\nwInterface ->
-                   let (IPv4 addr4) = ipv4 nwInterface
-                   in
-                     (ipv4ToHostname addr4 /= "0.0.0.0")
-                     && (ipv4ToHostname addr4 /= "127.0.0.1"))
-        nwInterfaces
-  return $ Set.fromList $ map (\nwInterface ->
-                                 let (IPv4 addr4) = ipv4 nwInterface in
-                                   Direct Hint { hostname = ipv4ToHostname addr4
-                                               , port = fromIntegral portnum
-                                               , priority = 0
-                                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
+          filter (\nwInterface -> name nwInterface /= "lo" &&
+                                  (show (ipv4 nwInterface) /= ("0.0.0.0" :: Text) ||
+                                   show (ipv6 nwInterface) /= ("0:0:0:0:0:0:0:0" :: Text)))
+          nwInterfaces
+  return $ Set.fromList $ concatMap (\nwInterface ->
+                                   [ Direct Hint { hostname = show (ipv4 nwInterface)
+                                                 , port = fromIntegral portnum
+                                                 , priority = 0
+                                                 , ctype = DirectTcpV1 }
+                                   , Direct Hint { hostname = show (ipv6 nwInterface)
+                                                 , port = fromIntegral portnum
+                                                 , priority = 0
+                                                 , ctype = DirectTcpV1 }
+                                   ]) nonLoopbackInterfaces
 
 -- | Type representing a Relay Endpoint URL
 data RelayEndpoint
