@@ -40,7 +40,6 @@ import qualified Data.Set as Set
 import Data.Aeson (encode, eitherDecode)
 import Data.Binary.Get (getWord32be, runGet)
 import Data.ByteString.Builder(toLazyByteString, word32BE, byteString)
-import Data.Bits (shiftL)
 import Data.Text (toLower)
 import System.Posix.Types (FileOffset, FileMode)
 import System.PosixCompat.Files (getFileStatus, fileSize, fileMode, isDirectory)
@@ -89,7 +88,7 @@ import qualified MagicWormhole
 -- handshake key.
 makeSenderHandshake :: SecretBox.Key -> ByteString
 makeSenderHandshake key =
-  (toS @Text @ByteString "transit sender ") <> hexid <> (toS @Text @ByteString " ready\n\n")
+  toS @Text @ByteString "transit sender " <> hexid <> toS @Text @ByteString " ready\n\n"
   where
     subkey = deriveKeyFromPurpose SenderHandshake key
     hexid = toS (toLower (toS @ByteString @Text (convertToBase Base16 subkey)))
@@ -99,7 +98,7 @@ makeSenderHandshake key =
 -- /XXXX...XX/ is the receiver handshake key.
 makeReceiverHandshake :: SecretBox.Key -> ByteString
 makeReceiverHandshake key =
-  (toS @Text @ByteString "transit receiver ") <> hexid <> (toS @Text @ByteString " ready\n\n")
+  toS @Text @ByteString "transit receiver " <> hexid <> toS @Text @ByteString " ready\n\n"
   where
     subkey = deriveKeyFromPurpose ReceiverHandshake key
     hexid = toS (toLower (toS @ByteString @Text (convertToBase Base16 subkey)))
@@ -108,7 +107,7 @@ makeReceiverHandshake key =
 -- "please relay HEXHEX for side XXXXX\n"
 makeRelayHandshake :: SecretBox.Key -> MagicWormhole.Side -> ByteString
 makeRelayHandshake key (MagicWormhole.Side side) =
-  (toS @Text @ByteString "please relay ") <> token <> (toS @Text @ByteString " for side ") <> sideBytes <> "\n"
+  toS @Text @ByteString "please relay " <> token <> toS @Text @ByteString " for side " <> sideBytes <> "\n"
   where
     subkey = deriveKeyFromPurpose RelayHandshake key
     token = toS (toLower (toS @ByteString @Text (convertToBase Base16 subkey)))
@@ -125,9 +124,9 @@ makeRecordKeys key =
     keyPair = (,) <$> makeSenderRecordKey key
               <*> makeReceiverRecordKey key
     makeSenderRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
-    makeSenderRecordKey = Saltine.decode . (deriveKeyFromPurpose SenderRecord)
+    makeSenderRecordKey = Saltine.decode . deriveKeyFromPurpose SenderRecord
     makeReceiverRecordKey :: SecretBox.Key -> Maybe SecretBox.Key
-    makeReceiverRecordKey = Saltine.decode . (deriveKeyFromPurpose ReceiverRecord)
+    makeReceiverRecordKey = Saltine.decode . deriveKeyFromPurpose ReceiverRecord
 
 -- |'senderTransitExchange' exchanges transit message with the peer.
 -- Sender sends a transit message with its abilities and hints.
@@ -144,8 +143,7 @@ senderTransitExchange conn hs = do
   where
     receiveTransitMsg = do
       -- receive the transit from the receiving side
-      responseMsg <- receiveWormholeMessage conn
-      return responseMsg
+      receiveWormholeMessage conn
 
 -- | create and send a Transit message to the peer.
 sendTransitMsg :: MagicWormhole.EncryptedConnection -> [Ability] -> [ConnectionHint] -> IO ()
@@ -176,7 +174,7 @@ receiveOffer conn = do
   case eitherDecode (toS received) of
     Right msg@(MagicWormhole.Message _) -> return $ Right msg
     Right file@(MagicWormhole.File _ _) -> return $ Right file
-    Right dir@(MagicWormhole.Directory _ _ _ _ _) -> return $ Right dir
+    Right dir@MagicWormhole.Directory {} -> return $ Right dir
     Left _ -> return $ Left received
 
 -- | Receive an Ack message over the wormhole connection
@@ -217,8 +215,7 @@ senderOfferExchange conn path tmpDir = do
         else sendFileOffer
     receiveResponse :: IO ByteString
     receiveResponse = do
-      rxFileOffer <- receiveWormholeMessage conn
-      return rxFileOffer
+      receiveWormholeMessage conn
     getFileSize :: FilePath -> IO FileOffset
     getFileSize file = fileSize <$> getFileStatus file
     sendFileOffer = do

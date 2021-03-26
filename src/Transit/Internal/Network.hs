@@ -42,6 +42,7 @@ import Network.Socket
   , addrFamily
   , getAddrInfo
   , SocketType ( Stream )
+  , Family ( AF_INET6 )
   , close
   , socket
   , socketPort
@@ -63,7 +64,6 @@ import Network.Socket
 import Network.Info
   ( getNetworkInterfaces
   , NetworkInterface(..)
-  , IPv4(..)
   )
 
 import Network.Socket.ByteString (send, recv)
@@ -98,8 +98,11 @@ tcpListener :: Bool -> IO (Maybe Socket)
 tcpListener True = return Nothing
 tcpListener False = do
   let hints' = defaultHints { addrFlags = [AI_NUMERICHOST], addrSocketType = Stream }
-  addr:_ <- getAddrInfo (Just hints') (Just "0.0.0.0") (Just (show defaultPort))
-  sock' <- socket (addrFamily addr) (addrSocketType addr) (addrProtocol addr)
+  -- getAddrInfo gives us a list of addresses. With AI_ADDRCONFIG, we
+  -- get one for IPv4 and another for IPv6
+  addr:_ <- getAddrInfo (Just hints') Nothing (Just (show defaultPort))
+  -- Always use AF_INET6 so that the socket listens on both IPv4 and IPv6
+  sock' <- socket AF_INET6 (addrSocketType addr) (addrProtocol addr)
   setSocketOption sock' ReuseAddr 1
   bind sock' (addrAddress addr)
   listen sock' 5
@@ -111,32 +114,25 @@ getSocketPort (Just sock') = do
   portnum <- socketPort sock'
   return (Just portnum)
 
-type Hostname = Text
-
-ipv4ToHostname :: Word32 -> Hostname
-ipv4ToHostname ip =
-  let (q1, r1) = ip `divMod` 256
-      (q2, r2) = q1 `divMod` 256
-      (q3, r3) = q2 `divMod` 256
-  in
-    show r1 <> "." <> show r2 <> "." <> show r3 <> "." <> show q3
-
 buildDirectHints :: PortNumber -> IO (Set.Set ConnectionHint)
 buildDirectHints portnum = do
   nwInterfaces <- getNetworkInterfaces
   let nonLoopbackInterfaces =
-        filter (\nwInterface ->
-                   let (IPv4 addr4) = ipv4 nwInterface
-                   in
-                     (ipv4ToHostname addr4 /= "0.0.0.0")
-                     && (ipv4ToHostname addr4 /= "127.0.0.1"))
-        nwInterfaces
-  return $ Set.fromList $ map (\nwInterface ->
-                                 let (IPv4 addr4) = ipv4 nwInterface in
-                                   Direct Hint { hostname = ipv4ToHostname addr4
-                                               , port = fromIntegral portnum
-                                               , priority = 0
-                                               , ctype = DirectTcpV1 }) nonLoopbackInterfaces
+          filter (\nwInterface -> name nwInterface /= "lo" &&
+                                  (show (ipv4 nwInterface) /= ("0.0.0.0" :: Text) ||
+                                   show (ipv6 nwInterface) /= ("0:0:0:0:0:0:0:0" :: Text)))
+          nwInterfaces
+      dhints = concatMap (\nwInterface ->
+                         [ Direct Hint { hostname = show (ipv4 nwInterface)
+                                       , port = fromIntegral portnum
+                                       , priority = 0
+                                       , ctype = DirectTcpV1 }
+                         , Direct Hint { hostname = show (ipv6 nwInterface)
+                                       , port = fromIntegral portnum
+                                       , priority = 0
+                                       , ctype = DirectTcpV1 }
+                         ]) nonLoopbackInterfaces
+  return $ Set.fromList $ dhints
 
 -- | Type representing a Relay Endpoint URL
 data RelayEndpoint
