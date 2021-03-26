@@ -265,8 +265,9 @@ app = do
     receiveSession maybeCode session useTor = do
       code <- liftIO $ getWormholeCode session maybeCode
       receive session code useTor
-    maybeGetConnectionSocket endpoint useTor | useTor == True = do
-                                                 res <- liftIO $ connectToTor endpoint
-                                                 return $ bimap NetworkError Just res
-                                             | otherwise = return (Right Nothing)
+    maybeGetConnectionSocket endpoint useTor | useTor = do
+        res <- liftIO $ connectToTor endpoint
+        return $ bimap NetworkError Just res
+                                             | otherwise =
+                                                 return (Right Nothing)
                                                

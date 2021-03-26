@@ -179,7 +179,7 @@ receiveFile conn transitserver transitKey transit useTor = do
     Right (MagicWormhole.Directory _mode name zipSize _ _uncompressedSize) -> do
       systemTmpDir <- getTemporaryDirectory
       tmpDir <- createTempDirectory systemTmpDir "wormhole"
-      let zipFile = tmpDir </> (toS name)
+      let zipFile = tmpDir </> toS name
       _ <- rxFile s zipFile zipSize
       -- TODO: check if the file system containing the current directory has
       -- enough space, by checking the uncompressedSize and the free space.
