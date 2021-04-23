@@ -197,15 +197,15 @@ sendMessageAck conn msg = do
   MagicWormhole.sendMessage conn (MagicWormhole.PlainText (toS (encode ackMessage)))
 
 -- | Exchange offer message with the peer over the wormhole connection
-senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> FilePath -> IO (Either Text FilePath)
+senderOfferExchange :: MagicWormhole.EncryptedConnection -> FilePath -> FilePath -> IO (Either Text (FilePath, Int))
 senderOfferExchange conn path tmpDir = do
   (filePath, rx) <- concurrently sendFileOrDirOffer receiveResponse
   -- receive file ack message {"answer": {"file_ack": "ok"}}
   case eitherDecode (toS rx) of
     Left s -> return $ Left (toS s)
     Right (Error errstr) -> return $ Left (toS errstr)
-    Right (Answer (FileAck msg)) | msg == "ok" -> return (Right filePath)
-                                 | otherwise -> return $ Left "Did not get file ack. Exiting"
+    Right (Answer (FileAck msg offset)) | msg == "ok" -> return (Right (filePath, offset))
+                                        | otherwise -> return $ Left "Did not get file ack. Exiting"
     Right (Answer (MessageAck _)) -> return $ Left "expected file ack, got message ack instead"
     Right (Transit _ _) -> return $ Left "unexpected transit message"
   where

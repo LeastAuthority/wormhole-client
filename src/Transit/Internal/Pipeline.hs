@@ -36,26 +36,27 @@ import Transit.Internal.Crypto (encrypt, decrypt, PlainText(..), CipherText(..),
 -- sum is calculated on the input before encryption to compare with the
 -- receiver's decrypted copy.
 sendPipeline :: C.MonadResource m =>
-                FilePath
+                Handle
              -> TransitEndpoint
              -> C.ConduitM a c m (Text, ())
-sendPipeline fp (TransitEndpoint (TCPEndpoint s _) key _) =
-  C.sourceFile fp .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
+sendPipeline h (TransitEndpoint (TCPEndpoint s _) key _) =
+  C.sourceHandle h .| sha256PassThroughC `C.fuseBoth` (encryptC key .| CN.sinkSocket s)
 
 -- | Receive the encrypted bytestream from a network socket, decrypt it and
 -- write it into a file, also calculating the sha256 sum of the decrypted
 -- output along the way.
 receivePipeline :: C.MonadResource m =>
-                   FilePath
+                   Handle
+                -> Int
                 -> Int
                 -> TransitEndpoint
                 -> C.ConduitM a c m (Text, ())
-receivePipeline fp len (TransitEndpoint (TCPEndpoint s _) key _) =
+receivePipeline h offset len (TransitEndpoint (TCPEndpoint s _) key _) =
     CN.sourceSocket s
     .| assembleRecordC
     .| decryptC key
-    .| CB.isolate len
-    .| sha256PassThroughC `C.fuseBoth` C.sinkFileCautious fp
+    .| CB.isolate (len - offset)
+    .| sha256PassThroughC `C.fuseBoth` C.sinkHandle h
 
 -- | A conduit function to encrypt the incoming byte stream with the given key
 encryptC :: MonadIO m => SecretBox.Key -> C.ConduitT ByteString ByteString m ()

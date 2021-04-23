@@ -102,7 +102,7 @@ instance FromJSON ConnectionHint where
                                   "rtype" -> "type"
                                   _ -> name }
 -- | Ack message type
-data Ack = FileAck Text
+data Ack = FileAck Text Int
            -- ^ File Ack
          | MessageAck Text
            -- ^ Message Ack

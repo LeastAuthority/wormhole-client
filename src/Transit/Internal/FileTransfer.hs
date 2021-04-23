@@ -21,6 +21,8 @@ import Network.Socket (Socket)
 import System.FilePath ((</>), takeFileName)
 import System.Directory (removeFile, getTemporaryDirectory)
 import System.IO.Temp (createTempDirectory)
+import System.PosixCompat.Files (fileExist, getFileStatus, fileSize)
+import System.IO (hSeek, SeekMode( RelativeSeek ))
 
 import qualified MagicWormhole
 
@@ -141,7 +143,7 @@ sendFile conn transitserver transitKey filepath useTor tmpDirPath = do
       offerResp <- senderOfferExchange conn filepath tmpDirPath
       case offerResp of
         Left s -> return (Left (NetworkError (OfferError s)))
-        Right filepath' -> do
+        Right (filepath', offset) -> do
           -- establish a transit connection
           endpoint <- establishTransit Send transitserver transitKey transit sock'
           case endpoint of
@@ -150,7 +152,9 @@ sendFile conn transitserver transitKey filepath useTor tmpDirPath = do
               (rxAckMsg, txSha256Hash) <-
                 finally
                 (do -- send encrypted records to the peer
-                    (txSha256Hash, _) <- C.runConduitRes (sendPipeline filepath' ep)
+                    h <- openFile filepath' ReadMode
+                    hSeek h RelativeSeek (fromIntegral offset)
+                    (txSha256Hash, _) <- C.runConduitRes (sendPipeline h ep)
                     -- read a record that should contain the transit Ack.
                     -- If ack is not ok or the sha256sum is incorrect, flag an error.
                     rxAckMsg <- receiveAckMessage ep
@@ -190,7 +194,15 @@ receiveFile conn transitserver transitKey transit useTor = do
       rxFile socket name size = do
         -- TODO: if the file already exist in the current dir, abort.
         -- send an answer message with file_ack.
-        let ans = Answer (FileAck "ok")
+        let path = "./" </> name
+        fe <- fileExist path
+        offset <- if fe
+                  then do
+                    fs <- getFileStatus path
+                    return (fileSize fs)
+                  else do
+                    return 0
+        let ans = Answer (FileAck "ok" (fromIntegral offset))
         sendWormholeMessage conn (Aeson.encode ans)
         -- establish receive transit endpoint
         endpoint <- establishTransit Receive transitserver transitKey transit socket
@@ -202,7 +214,8 @@ receiveFile conn transitserver transitKey transit useTor = do
                      -- receive and decrypt records (length followed by length
                      -- sized packets). Also keep track of decrypted size in
                      -- order to know when to send the file ack at the end.
-                     (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline name (fromIntegral size) ep
+                     h <- openFile path AppendMode
+                     (rxSha256Sum, ()) <- C.runConduitRes $ receivePipeline h (fromIntegral offset) (fromIntegral size) ep
                      sendAckMessage ep (toS rxSha256Sum))
                  (closeConnection ep)
             return $ Right ()
