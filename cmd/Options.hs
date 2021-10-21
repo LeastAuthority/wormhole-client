@@ -73,9 +73,10 @@ optionsParser
       Opt.help "appid to use" <>
       Opt.value defaultAppId <>
       Opt.showDefault )
-    -- <*> Opt.switch
-    -- ( Opt.long "tor" <>
-    --   Opt.help "use Tor" )
+    <*> Opt.switch
+    ( Opt.long "verify" <>
+      Opt.short 'v' <>
+      Opt.help "display verification string and wait for approval")
   where
     -- | Default URL for relay server.
     --

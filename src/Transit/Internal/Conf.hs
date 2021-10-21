@@ -29,9 +29,9 @@ data Options
   , transitUrl :: RelayEndpoint
     -- ^ Transit Relay URL
   , appId :: MagicWormhole.AppID
-    -- ^ Application ID string
-  -- , useTor :: Bool
-  --   -- ^ Whether to use Tor for all network communication
+  -- ^ Application ID string
+  , verify :: Bool
+  -- ^ Display a verification string or not
   } deriving (Eq, Show)
 
 -- | Commands
