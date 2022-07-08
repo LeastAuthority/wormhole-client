@@ -1,5 +1,6 @@
 -- | Description: a file-transfer monad transformer
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Transit.Internal.App
   ( Env(..)
   , App
@@ -21,6 +22,7 @@ import qualified System.Console.Haskeline as H
 import qualified System.Console.Haskeline.Completion as HC
 import qualified Crypto.Spake2 as Spake2
 
+import Data.ByteArray.Encoding (convertToBase, Base(Base16))
 import System.IO.Error (IOError)
 import System.Random (randomR, getStdGen)
 import Data.String (String)
@@ -35,6 +37,7 @@ import Transit.Internal.Errors (Error(..), CommunicationError(..))
 import Transit.Internal.FileTransfer(MessageType(..), sendFile, receiveFile)
 import Transit.Internal.Peer (sendOffer, receiveOffer, receiveMessageAck, sendMessageAck, decodeTransitMsg)
 import Transit.Internal.Network (connectToTor)
+import Transit.Internal.Crypto (CryptoError(..))
 
 -- | Magic Wormhole transit app environment
 data Env
@@ -159,6 +162,7 @@ send session code tfd useTor = do
   let args = options cmdlineOptions
   let appid = appId args
   let transitserver = transitUrl args
+  let verification = verify args
   nameplate <- liftIO $ MagicWormhole.allocate session
   mailbox <- liftIO $ MagicWormhole.claim session nameplate
   peer <- liftIO $ MagicWormhole.open session mailbox  -- XXX: We should run `close` in the case of exceptions?
@@ -166,24 +170,35 @@ send session code tfd useTor = do
   let passcode = toS n <> "-" <> toS code
   liftIO $ printSendHelpText passcode
   result <- liftIO $ MagicWormhole.withEncryptedConnection peer (Spake2.makePassword (toS passcode))
-    (\conn ->
-        case tfd of
-          TMsg msg -> do
-            let offer = MagicWormhole.Message msg
-            sendOffer conn offer
-            -- wait for "answer" message with "message_ack" key
-            first NetworkError <$> receiveMessageAck conn
-          TFile fileOrDirpath -> do
-            let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
-            bracket
-              -- acquire resource
-              (do
-                  systemTmpDir <- getTemporaryDirectory
-                  createTempDirectory systemTmpDir "wormhole")
-              -- release resource
-              removeDirectoryRecursive
-              -- do the computation in between: send the file
-              (sendFile conn transitserver transitKey fileOrDirpath useTor)
+    (\conn -> do
+       -- XXX: if `verification' is true, then compute the
+       -- verification string and display it to the user and wait for
+       -- the user input before proceeding.
+       let verifyStr = MagicWormhole.makeVerificationString conn
+       let verifyStrHex = toS @ByteString @Text (convertToBase Base16 verifyStr)
+       let verificationQuestion = "Verifier " <> verifyStrHex <> ". ok? (yes/no)"
+       when verification (TIO.putStr verificationQuestion)
+       ans <- Text.strip <$> TIO.getLine
+       case ans of
+         "yes" -> do
+                  case tfd of
+                    TMsg msg -> do
+                             let offer = MagicWormhole.Message msg
+                             sendOffer conn offer
+                             -- wait for "answer" message with "message_ack" key
+                             first NetworkError <$> receiveMessageAck conn
+                    TFile fileOrDirpath -> do
+                             let transitKey = MagicWormhole.deriveKey conn (transitPurpose appid)
+                             bracket
+                              -- acquire resource
+                              (do
+                                systemTmpDir <- getTemporaryDirectory
+                                createTempDirectory systemTmpDir "wormhole")
+                                -- release resource
+                                removeDirectoryRecursive
+                                -- do the computation in between: send the file
+                                (sendFile conn transitserver transitKey fileOrDirpath useTor)
+         _ -> return $ Left (CipherError (VerificationError "verification rejected, abandoned transfer"))
     )
   liftEither result
 

@@ -36,6 +36,8 @@ data CryptoError = BadNonce Text
                  -- ^ We could not decrypt the incoming encrypted record.
                  | KeyGenError Text
                  -- ^ Could not generate transit keys.
+                 | VerificationError Text
+                 -- ^ verification string doesn't match.
                  deriving (Eq, Show)
 
 instance E.Exception CryptoError
@@ -89,6 +91,8 @@ data Purpose
   -- ^ Purpose type to be used for decrypting records.
   | RelayHandshake
   -- ^ Purpose type to be used for transit relay handshake.
+  | VerificationString
+  -- ^ Verification string to be displayed on sender and receiver.
   deriving (Eq, Show)
 
 -- | derive a new purpose-specific key from a master key.
@@ -103,3 +107,4 @@ deriveKeyFromPurpose purpose key =
     purposeStr SenderRecord = "transit_record_sender_key"
     purposeStr ReceiverRecord = "transit_record_receiver_key"
     purposeStr RelayHandshake = "transit_relay_token"
+    purposeStr VerificationString = "wormhole:verifier"
