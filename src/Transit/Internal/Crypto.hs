@@ -17,10 +17,9 @@ import qualified Control.Exception as E
 import qualified Data.ByteString as BS
 import qualified Crypto.Saltine.Class as Saltine
 import qualified Crypto.Saltine.Core.SecretBox as SecretBox
-import Crypto.Saltine.Internal.ByteSizes (boxNonce)
+import Crypto.Saltine.Internal.SecretBox (secretbox_noncebytes, secretbox_keybytes)
 import qualified Crypto.KDF.HKDF as HKDF
 import Crypto.Hash (SHA256(..))
-import qualified Crypto.Saltine.Internal.ByteSizes as ByteSizes
 
 -- | Type for representing unencrypted plain text
 newtype PlainText = PlainText ByteString
@@ -47,7 +46,7 @@ instance E.Exception CryptoError
 decrypt :: SecretBox.Key -> CipherText -> Either CryptoError (PlainText, SecretBox.Nonce)
 decrypt key (CipherText ciphertext) =
   -- extract nonce from ciphertext.
-  let (nonceBytes, record) = BS.splitAt boxNonce ciphertext
+  let (nonceBytes, record) = BS.splitAt secretbox_noncebytes ciphertext
       maybeResult = Saltine.decode nonceBytes >>=
                     \nonce -> SecretBox.secretboxOpen key nonce record >>=
                     \plaintext -> return (plaintext, nonce)
@@ -74,7 +73,7 @@ hkdf :: ByteString -> SecretBox.Key -> ByteString -> ByteString
 hkdf salt key purpose =
   HKDF.expand (HKDF.extract salt (Saltine.encode key) :: HKDF.PRK SHA256) purpose keySize
   where
-    keySize = ByteSizes.secretBoxKey
+    keySize = secretbox_keybytes
 
 -- | Various purpose types for key derivation.
 --
