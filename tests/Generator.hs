@@ -15,7 +15,7 @@ where
 import Protolude
 
 import Hedgehog (MonadGen(..))
-import Crypto.Saltine.Internal.ByteSizes (boxNonce)
+import Crypto.Saltine.Internal.Box (box_noncebytes)
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
 
@@ -72,7 +72,7 @@ transitAckGen = TransitAck
   <*> Gen.text (Range.singleton 64) Gen.hexit
 
 nonceBytesGen :: MonadGen m => m ByteString
-nonceBytesGen = Gen.bytes (Range.singleton boxNonce)
+nonceBytesGen = Gen.bytes (Range.singleton box_noncebytes)
 
 purposeGen :: MonadGen m => m C.Purpose
 purposeGen = Gen.choice [ pure C.SenderHandshake
